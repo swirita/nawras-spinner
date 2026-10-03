@@ -20,15 +20,23 @@ export function drawWheel(container, options, { mini = false, rotation = 0, spin
     const gradient = node('linearGradient', { id: `${prefix}-${i}`, x1: '0', y1: '0', x2: '1', y2: '1' });
     gradient.append(node('stop', { offset: '0', 'stop-color': tint(color, highlight) }), node('stop', { offset: '.55', 'stop-color': color }), node('stop', { offset: '1', 'stop-color': tint(color, highlight * .2) })); defs.append(gradient);
   });
+  const reflectionGradient = node('radialGradient', { id: `${prefix}-reflection`, gradientUnits: 'userSpaceOnUse', cx: 125, cy: 95, r: 340 });
+  reflectionGradient.append(node('stop', { offset: '0', 'stop-color': '#fff' }), node('stop', { offset: '.48', 'stop-color': '#fff', 'stop-opacity': '.65' }), node('stop', { offset: '1', 'stop-color': '#fff', 'stop-opacity': '0' }));
+  defs.append(reflectionGradient);
+  const rotationStyle = `transform: rotate(${rotation}deg); transform-origin: 250px 250px`;
+  const mask = node('mask', { id: `${prefix}-mask`, maskUnits: 'userSpaceOnUse', x: 0, y: 0, width: 500, height: 500, 'mask-type': 'alpha' });
+  const maskGroup = node('g', { class: 'reflection-mask', style: rotationStyle }); mask.append(maskGroup); defs.append(mask);
   svg.append(defs);
-  const group = node('g', { class: 'wheel-disc', style: `transform: rotate(${rotation}deg); transform-origin: 250px 250px` });
+  const group = node('g', { class: 'wheel-disc', style: rotationStyle });
+  const labels = node('g', { class: 'wheel-labels wheel-decoration', style: rotationStyle });
   svg.append(group);
   const list = slices(options);
   if (!list.length) { group.append(node('circle', { cx: 250, cy: 250, r: 238, fill: '#e8edf4' })); const text = node('text', { x: 250, y: 325, 'text-anchor': 'middle', class: 'empty-wheel' }); text.textContent = 'No options'; group.append(text); }
   list.forEach((slice, index) => {
     const [x1, y1] = point(slice.start), [x2, y2] = point(slice.end);
     const shape = slice.fraction > .999999999 ? node('circle', { cx: 250, cy: 250, r: 238 }) : node('path', { d: `M250 250 L${x1} ${y1} A238 238 0 ${slice.end - slice.start > 180 ? 1 : 0} 1 ${x2} ${y2} Z` });
-    shape.setAttribute('fill', `url(#${gradientIds.get(sectionColors[index])})`); shape.setAttribute('stroke', '#ffffff'); shape.setAttribute('stroke-width', '1.25');
+    const reflectionShape = shape.cloneNode(); reflectionShape.setAttribute('fill', '#fff'); reflectionShape.setAttribute('opacity', sectionStyle(sectionColors[index]).reflection); maskGroup.append(reflectionShape);
+    shape.setAttribute('fill', `url(#${gradientIds.get(sectionColors[index])})`); shape.setAttribute('stroke', '#ffffff99'); shape.setAttribute('stroke-width', '.9');
     const link = !mini && !spinning && linkFor(slice.item);
     const parent = link ? node('a', { href: link, target: '_blank', rel: 'noopener noreferrer', 'aria-label': `Open link for ${labelFor(slice.item)}`, class: 'slice-link' }) : node('g');
     const title = node('title'); title.textContent = labelFor(slice.item); parent.append(title, shape);
@@ -37,20 +45,22 @@ export function drawWheel(container, options, { mini = false, rotation = 0, spin
       const flip = angle > 180;
       const label = labelFor(slice.item);
       const width = 138;
-      let size = slice.fraction >= .5 ? 18 : Math.min(18, Math.max(11, 2 * 153 * Math.sin(slice.fraction * Math.PI) * .48));
-      measure.font = `600 ${size}px "Segoe UI", Arial, sans-serif`;
+      let size = slice.fraction >= .5 ? 16.5 : Math.min(16.5, Math.max(11, 2 * 153 * Math.sin(slice.fraction * Math.PI) * .48));
+      measure.font = `500 ${size}px "Segoe UI", Arial, sans-serif`;
       size = Math.min(size, size * width / Math.max(1, measure.measureText(label).width));
       // Show exact names when they fit; hide dense/long labels rather than abbreviating them.
       if (size >= 11) {
         const text = node('text', { transform: `translate(250 250) rotate(${angle - 90 + (flip ? 180 : 0)})`, x: flip ? -153 : 153, y: 0, 'text-anchor': 'middle', 'dominant-baseline': 'middle', class: 'slice-label', 'font-size': size });
         text.style.fill = sectionStyle(sectionColors[index]).text;
-        text.textContent = label; parent.append(text);
+        text.textContent = label; labels.append(text);
       }
     }
     group.append(parent);
   });
-  // Highlights live inside each slice, below its label, to preserve text contrast.
-  svg.append(node('circle', { cx: 250, cy: 250, r: 241, fill: 'none', stroke: '#d4dfe8', 'stroke-width': 5, class: 'wheel-decoration' }), node('circle', { cx: 250, cy: 250, r: 239, fill: 'none', stroke: '#ffffff', 'stroke-width': 3, class: 'wheel-decoration' }));
+  const reflection = node('circle', { cx: 250, cy: 250, r: 238, fill: `url(#${prefix}-reflection)`, mask: `url(#${prefix}-mask)`, class: 'wheel-reflection wheel-decoration' });
+  // The reflection stays in viewport coordinates; its mask and labels follow the slices.
+  svg.append(reflection, labels, node('circle', { cx: 250, cy: 250, r: 241, fill: 'none', stroke: '#e5eef1b3', 'stroke-width': 7, class: 'wheel-decoration' }), node('circle', { cx: 250, cy: 250, r: 238.5, fill: 'none', stroke: '#ffffffb3', 'stroke-width': '1.8', class: 'wheel-decoration' }), node('circle', { cx: 250, cy: 250, r: 235.5, fill: 'none', stroke: '#16345214', 'stroke-width': '2.5', class: 'wheel-decoration' }));
+  group.rotationLayers = [maskGroup, labels];
   container.append(svg);
   const img = document.createElement('img'); img.className = 'centre-logo'; img.src = `${import.meta.env.BASE_URL}assets/nawras-circle.png`; img.alt = ''; container.append(img);
   const pointer = document.createElement('div'); pointer.className = 'pointer'; container.append(pointer);

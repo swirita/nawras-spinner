@@ -1,0 +1,33 @@
+.winner-content{padding:55px 7vw 160px;position:relative;z-index:2}
+.winner-controls{position:absolute;left:0;bottom:0;width:100%;margin:0;padding:22px 20px max(32px,env(safe-area-inset-bottom));z-index:2}
+.winner-controls .dialog-actions{justify-content:center;gap:16px;flex-wrap:wrap}
+.winner-controls .close-dialog{display:grid;place-items:center;padding:8px;z-index:3}
+.winner-reveal .confetti{z-index:0}
+.winner-reveal .confetti i{left:50%;top:100%;width:6px;height:10px;opacity:0;animation:winner-fountain 1.8s var(--delay) cubic-bezier(.15,.55,.25,1) both}
+@keyframes winner-fountain{0%{opacity:0;transform:translate(-50%,0) rotate(0)}10%{opacity:.85}70%{opacity:.6}100%{opacity:0;transform:translate(calc(-50% + var(--dx)),var(--rise)) rotate(var(--tilt))}}
+.winner-reveal.winner-leaving{animation:winner-dismiss .35s ease-in-out forwards}
+.winner-reveal.winner-leaving::backdrop{animation:backdrop-dismiss .35s ease-in-out forwards}
+.winner-leaving .winner-content h2,.winner-leaving .winner-controls{animation:none}
+.winner-leaving{pointer-events:none}
+@keyframes winner-dismiss{from{opacity:1}to{opacity:0}}
+@keyframes backdrop-dismiss{from{background:rgb(0 0 0 / .94)}to{background:rgb(0 0 0 / 0)}}
+.wheel-settings{margin-top:10px;border-top:1px solid var(--line);padding-top:8px}
+.presentation-exhausted{gap:14px}
+.audience-stage.presentation-exhausted .wheel-wrap{width:min(85vw,clamp(80px,calc(100dvh - 330px),440px));min-width:0}
+.presentation-end{display:flex;flex-direction:column;align-items:center;gap:8px}
+.presentation-actions{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap}
+.presentation-actions .spin-button{min-width:110px}
+.presentation-actions [data-action=reset-presentation]{font-size:13px;padding:10px 12px}
+.editing .wheel-settings .remove-winner{margin:0;padding:0;border:0}
+.save-winners-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:5px}
+.save-winners-row label{display:flex;align-items:center;gap:7px;font-size:12px;white-space:nowrap}
+.save-winners-row button{padding:5px 8px;min-height:28px;font-size:11px}
+dialog.history-modal{max-height:calc(100dvh - 32px);overflow:hidden}
+.history-dialog{display:flex;flex-direction:column;min-height:0}
+.winner-history-list{max-height:55dvh;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.history-record{display:flex;justify-content:space-between;align-items:baseline;gap:18px;border-bottom:1px solid #dfe6ee;padding:12px 0}
+.history-record span{font-size:14px;overflow-wrap:anywhere;min-width:0}
+.history-record time{font-size:11px;color:#657b93;flex-shrink:0;white-space:nowrap}
+@media(max-width:640px){.winner-content{padding:50px 6vw 160px}.winner-controls{padding:18px 16px max(28px,env(safe-area-inset-bottom))}.winner-controls .dialog-actions{gap:12px}.history-record{flex-direction:column;gap:4px}}
+@media(max-height:450px){.winner-content{padding:42px 6vw 110px}.winner-controls{padding-top:12px;padding-bottom:18px}}
+@media(prefers-reduced-motion:reduce){.winner-reveal.winner-leaving,.winner-reveal.winner-leaving::backdrop{animation:none!important}.winner-reveal .confetti{display:none}}

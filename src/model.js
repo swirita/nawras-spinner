@@ -3,7 +3,7 @@ export const STORAGE_KEY = 'nawras-spinner:v1';
 export const id = () => crypto.randomUUID();
 export const copy = value => structuredClone(value);
 export const option = (label, index = 0) => ({ id: id(), label, adjustWeight: false, weight: 1, linkEnabled: false, url: '', color: defaultColor(index) });
-export const wheel = (title = 'Untitled wheel', labels = []) => ({ id: id(), title, options: labels.map(option), removeWinner: false });
+export const wheel = (title = 'Untitled wheel', labels = []) => ({ id: id(), title, options: labels.map(option), removeWinner: false, saveWinners: false, winnerHistory: [] });
 export const example = () => wheel('Nawras Activities', ['Wordle', 'Memory', 'Slasher', 'Kahoot 1', 'Kahoot 2', 'Coupon 1', 'Coupon 2', 'Try Again']);
 export const validURL = value => {
   try {
@@ -35,6 +35,11 @@ export function landingRotation(current, slice) {
   const target = (360 - (slice.start + slice.end) / 2) % 360;
   return current + 360 * 5 + ((target - current % 360 + 360) % 360);
 }
+export function recordWinner(w, winner, spinId, wonAt = new Date().toISOString()) {
+  if (!w.saveWinners || w.winnerHistory.some(record => record.id === spinId)) return false;
+  w.winnerHistory.push({ id: spinId, optionId: winner.id, label: labelFor(winner), wonAt });
+  return true;
+}
 export function validateData(data, fresh = false) {
   if (!data || data.version !== VERSION || !Array.isArray(data.wheels)) throw new Error('Expected a Nawras Spinner version 1 JSON file.');
   const wheelIds = new Set();
@@ -49,7 +54,17 @@ export function validateData(data, fresh = false) {
       if (o.color !== undefined && !validColor(o.color)) throw new Error('Option colors must be six-digit hexadecimal colors.');
       return { id: fresh ? id() : o.id, label: o.label, adjustWeight: o.adjustWeight, weight: o.adjustWeight ? o.weight : 1, linkEnabled: o.linkEnabled, url: o.url, color: o.color?.toLowerCase() ?? defaultColor(index) };
     });
-    return { id: fresh ? id() : w.id, title: w.title, removeWinner: w.removeWinner, options };
+    if (w.saveWinners !== undefined && typeof w.saveWinners !== 'boolean') throw new Error('Invalid Save winners setting.');
+    if (w.winnerHistory !== undefined && !Array.isArray(w.winnerHistory)) throw new Error('Invalid winner history.');
+    const recordIds = new Set();
+    const optionMapping = new Map(w.options.map((o, i) => [o.id, options[i].id]));
+    const winnerHistory = (w.winnerHistory || []).map(record => {
+      if (!record || typeof record.id !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(record.id) || recordIds.has(record.id) || typeof record.optionId !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(record.optionId) || typeof record.label !== 'string' || typeof record.wonAt !== 'string' || !Number.isFinite(Date.parse(record.wonAt))) throw new Error('Invalid winner history record.');
+      recordIds.add(record.id);
+      if (fresh && !optionMapping.has(record.optionId)) optionMapping.set(record.optionId, id());
+      return { id: fresh ? id() : record.id, optionId: fresh ? optionMapping.get(record.optionId) : record.optionId, label: record.label, wonAt: new Date(record.wonAt).toISOString() };
+    });
+    return { id: fresh ? id() : w.id, title: w.title, removeWinner: w.removeWinner, options, saveWinners: w.saveWinners ?? false, winnerHistory };
   });
   return { version: VERSION, wheels };
 }

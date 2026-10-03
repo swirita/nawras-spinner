@@ -1,7 +1,9 @@
 import './style.css';
 import './polish.css';
 import './editor-layout.css';
-import { VERSION, STORAGE_KEY, id, copy, wheel, option, load, validateData, slices, selectSlice, landingRotation, labelFor, linkFor } from './model.js';
+import './frosted.css';
+import './winner-footer.css';
+import { VERSION, STORAGE_KEY, id, copy, wheel, option, load, validateData, slices, selectSlice, landingRotation, labelFor, linkFor, recordWinner } from './model.js';
 import { drawWheel } from './wheel.js';
 import { colorFor, defaultColor } from './colors.js';
 
@@ -13,6 +15,15 @@ let data = loaded.data, blocked = loaded.blocked, spinning = false, rotation = 0
 const histories = new Map();
 const editorScroll = new Map();
 let revealTimer;
+let celebrationTimer;
+let revealTransition = false;
+// Presentation exclusions are transient and never become part of saved wheel data.
+let removedWinnerIds = new Set();
+const presentationOptions = w => w.options.filter(o => !removedWinnerIds.has(o.id));
+function clearCelebration() {
+  clearTimeout(celebrationTimer);
+  dialog.querySelectorAll('.confetti,.winner-sparkles').forEach(el => el.remove());
+}
 const esc = text => String(text).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 const btn = (action, text, cls = '', extra = '') => `<button type="button" data-action="${action}" class="${cls}" ${extra}>${text}</button>`;
 const route = () => { const [, view, id] = location.hash.split('/'); return { view: view || 'wheels', id }; };
@@ -49,6 +60,7 @@ function refreshPreview(w) {
   document.querySelectorAll('.chance').forEach((el, i) => { const p = (list[i]?.fraction || 0) * 100; el.textContent = `${p > 0 && p < .01 ? '<0.01' : Number(p.toFixed(2))}%`; });
 }
 function showDialog(html, after) {
+  clearCelebration();
   clearTimeout(revealTimer); dialog.className = ''; dialog.removeAttribute('aria-labelledby');
   dialog.innerHTML = html; dialog.returnValue = ''; dialog.showModal();
   dialog.querySelector('[data-action="dismiss"]')?.addEventListener('click', () => dialog.close());
@@ -60,6 +72,8 @@ function confirmAction(title, text, action, callback) {
 }
 function render() {
   routeToken++; rotation = 0; editGroup = null;
+  removedWinnerIds = new Set();
+  revealTransition = false;
   if (dialog.open) dialog.close();
   const { view } = route(), w = current();
   document.body.classList.toggle('audience', view === 'present' && !!w);
@@ -78,19 +92,22 @@ function renderLibrary() {
 function renderEditor(w) {
   const oldList = document.querySelector('.option-list');
   if (oldList && oldList.dataset.wheel === w.id) editorScroll.set(w.id, oldList.scrollTop);
-  app.innerHTML = `<div class="editor-top"><a class="back-link" href="#/wheels">← My Wheels</a><div class="toolbar"><span id="saved" class="saved">${blocked ? 'Not saved' : '✓ Saved'}</span><a class="button primary" href="#/present/${w.id}">Present ↗</a></div></div><div class="editor-layout"><section class="wheel-stage" aria-label="Wheel preview"><div id="editor-wheel"></div></section><section class="editor-pane"><label class="field-label" for="wheel-title">Wheel title</label><input id="wheel-title" class="title-input" data-field="title" value="${esc(w.title)}" placeholder="Untitled wheel"><div class="options-heading"><h2>Options <span id="option-count"></span></h2><div class="history-actions">${btn('undo', '↶', '', 'aria-label="Undo" title="Undo"')}${btn('redo', '↷', '', 'aria-label="Redo" title="Redo"')}</div></div><div class="option-list" data-wheel="${w.id}" tabindex="0" role="region" aria-label="Wheel entries">${w.options.map((o, i) => `<div class="option-row" data-option="${o.id}"><div class="option-main"><span class="option-number">${String(i + 1).padStart(2, '0')}</span><input type="color" class="color-swatch" data-field="color" aria-label="Option ${i + 1} color" title="Section color" value="${colorFor(o, i)}"><input data-field="label" aria-label="Option ${i + 1} label" value="${esc(o.label)}" placeholder="Option label"><span class="chance"></span>${btn('remove-option', '×', 'remove', `aria-label="Remove option ${i + 1}"`)}</div><div class="option-settings"><label><input type="checkbox" data-field="adjustWeight" ${o.adjustWeight ? 'checked' : ''}> Adjust weight</label>${o.adjustWeight ? `<input class="weight-input" data-field="weight" type="number" min="0" step="any" aria-label="Option ${i + 1} weight" value="${o.weight}">` : ''}<label><input type="checkbox" data-field="linkEnabled" ${o.linkEnabled ? 'checked' : ''}> Link</label></div>${o.linkEnabled ? `<input class="url-input" type="url" data-field="url" aria-label="Option ${i + 1} URL" placeholder="https://example.com" value="${esc(o.url)}"><small class="url-error" ${linkFor(o) ? 'hidden' : ''}>Enter a valid HTTP or HTTPS URL.</small>` : ''}</div>`).join('')}</div><div class="option-tools">${btn('add-option', '+ Add option')}${btn('paste', 'Paste list')}${btn('reset-colors', 'Reset colors', 'text-button')}${btn('clear', 'Clear', 'text-button', `aria-label="Clear Options" ${!w.options.length ? 'disabled' : ''}`)}</div><label class="remove-winner"><input type="checkbox" data-field="removeWinner" ${w.removeWinner ? 'checked' : ''}> Remove winner after each spin</label></section></div>`;
+  app.innerHTML = `<div class="editor-top"><a class="back-link" href="#/wheels">← My Wheels</a><div class="toolbar"><span id="saved" class="saved">${blocked ? 'Not saved' : '✓ Saved'}</span><a class="button primary" href="#/present/${w.id}">Present ↗</a></div></div><div class="editor-layout"><section class="wheel-stage" aria-label="Wheel preview"><div id="editor-wheel"></div></section><section class="editor-pane"><label class="field-label" for="wheel-title">Wheel title</label><input id="wheel-title" class="title-input" data-field="title" value="${esc(w.title)}" placeholder="Untitled wheel"><div class="options-heading"><h2>Options <span id="option-count"></span></h2><div class="history-actions">${btn('undo', '↶', '', 'aria-label="Undo" title="Undo"')}${btn('redo', '↷', '', 'aria-label="Redo" title="Redo"')}</div></div><div class="option-list" data-wheel="${w.id}" tabindex="0" role="region" aria-label="Wheel entries">${w.options.map((o, i) => `<div class="option-row" data-option="${o.id}"><div class="option-main"><span class="option-number">${String(i + 1).padStart(2, '0')}</span><input type="color" class="color-swatch" data-field="color" aria-label="Option ${i + 1} color" title="Section color" value="${colorFor(o, i)}"><input data-field="label" aria-label="Option ${i + 1} label" value="${esc(o.label)}" placeholder="Option label"><span class="chance"></span>${btn('remove-option', '×', 'remove', `aria-label="Remove option ${i + 1}"`)}</div><div class="option-settings"><label><input type="checkbox" data-field="adjustWeight" ${o.adjustWeight ? 'checked' : ''}> Adjust weight</label>${o.adjustWeight ? `<input class="weight-input" data-field="weight" type="number" min="0" step="any" aria-label="Option ${i + 1} weight" value="${o.weight}">` : ''}<label><input type="checkbox" data-field="linkEnabled" ${o.linkEnabled ? 'checked' : ''}> Link</label></div>${o.linkEnabled ? `<input class="url-input" type="url" data-field="url" aria-label="Option ${i + 1} URL" placeholder="https://example.com" value="${esc(o.url)}"><small class="url-error" ${linkFor(o) ? 'hidden' : ''}>Enter a valid HTTP or HTTPS URL.</small>` : ''}</div>`).join('')}</div><div class="option-tools">${btn('add-option', '+ Add option')}${btn('paste', 'Paste list')}${btn('reset-colors', 'Reset colors', 'text-button')}${btn('clear', 'Clear', 'text-button', `aria-label="Clear Options" ${!w.options.length ? 'disabled' : ''}`)}</div><div class="wheel-settings"><label class="remove-winner"><input type="checkbox" data-field="removeWinner" ${w.removeWinner ? 'checked' : ''}> Remove winners during presentation</label><div class="save-winners-row"><label><input type="checkbox" data-field="saveWinners" ${w.saveWinners ? 'checked' : ''}> Save winners</label>${btn('winner-history', 'Winner history', 'text-button')}</div></div></section></div>`;
   document.querySelector('.option-list').scrollTop = editorScroll.get(w.id) || 0;
   refreshPreview(w); updateHistory(w);
   updateSaved(lastSave);
 }
 function renderAudience(w) {
-  app.innerHTML = `<section class="audience-stage"><h1>${esc(w.title || 'Untitled wheel')}</h1><div id="audience-wheel"></div>${btn('spin', 'Spin', 'primary spin-button', !w.options.length ? 'disabled' : '')}${!w.options.length ? '<p class="empty-note">No options remain.</p>' : ''}</section>`;
-  drawWheel(document.querySelector('#audience-wheel'), w.options);
+  const options = presentationOptions(w);
+  const spinButton = btn('spin', 'Spin', 'primary spin-button', !options.length ? 'disabled' : '');
+  app.innerHTML = `<section class="audience-stage ${!options.length ? 'presentation-exhausted' : ''}"><h1>${esc(w.title || 'Untitled wheel')}</h1><div id="audience-wheel"></div>${options.length ? spinButton : `<div class="presentation-end"><div class="presentation-actions">${spinButton}${w.options.length ? btn('reset-presentation', 'Reset presentation', 'quiet') : ''}</div><p class="empty-note">No options remain.</p></div>`}</section>`;
+  drawWheel(document.querySelector('#audience-wheel'), options, { rotation });
 }
 function result(w, winner) {
   const link = linkFor(winner);
-  showDialog(`<div class="winner-content"><h2 id="winner-name" tabindex="-1">${esc(labelFor(winner))}</h2><div class="winner-controls" hidden><button class="close-dialog" data-action="dismiss" aria-label="Close winner">×</button><div class="dialog-actions">${link ? `<a class="button" href="${esc(link)}" target="_blank" rel="noopener noreferrer">Open Link ↗</a>` : ''}${btn('spin-again', 'Spin Again', '', !w.options.length ? 'disabled' : '')}</div><p class="empty-note" ${w.options.length ? 'hidden' : ''}>No options remain.</p></div></div>`, () => {
-    dialog.querySelector('[data-action="spin-again"]').addEventListener('click', () => { dialog.close(); drawWheel(document.querySelector('#audience-wheel'), w.options, { rotation }); spin(w); });
+  const options = presentationOptions(w);
+  showDialog(`<div class="winner-content"><h2 id="winner-name" tabindex="-1">${esc(labelFor(winner))}</h2><div class="winner-controls" hidden><button class="close-dialog" data-action="dismiss" aria-label="Close winner"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M6 6 18 18M18 6 6 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button><div class="dialog-actions">${link ? `<a class="button" href="${esc(link)}" target="_blank" rel="noopener noreferrer">Open Link ↗</a>` : ''}${btn('spin-again', 'Spin Again', '', !options.length ? 'disabled' : '')}${!options.length && w.options.length ? btn('reset-presentation', 'Reset presentation') : ''}</div><p class="empty-note" ${options.length ? 'hidden' : ''}>No options remain.</p></div></div>`, () => {
+    dialog.querySelector('[data-action="spin-again"]').addEventListener('click', () => spinAgain(w));
   });
   dialog.className = 'winner-reveal'; dialog.setAttribute('aria-labelledby', 'winner-name');
   document.querySelector('#winner-name').focus({ preventScroll: true });
@@ -98,13 +115,42 @@ function result(w, winner) {
   revealTimer = setTimeout(() => { if (dialog.open && dialog.classList.contains('winner-reveal')) { dialog.querySelector('.winner-controls').hidden = false; } }, 1000);
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const confetti = document.createElement('div'); confetti.className = 'confetti'; confetti.setAttribute('aria-hidden', 'true');
-  for (let i = 0; i < 36; i++) { const piece = document.createElement('i'); piece.style.cssText = `--dx:${(Math.random() - .5) * Math.min(innerWidth, 1100)}px;--dy:${(Math.random() - .45) * Math.min(innerHeight, 900)}px;--delay:${Math.random() * .12}s;--tilt:${Math.random() * 540}deg;background:${['#efc966', '#77dce9', '#c0abf0'][i % 3]}`; confetti.append(piece); }
-  dialog.append(confetti); setTimeout(() => confetti.remove(), 2200);
+  for (let i = 0; i < 32; i++) {
+    const piece = document.createElement('i');
+    piece.style.cssText = `--dx:${(Math.random() - .5) * Math.min(innerWidth * .85, 950)}px;--rise:${-Math.min(innerHeight * .75, 760) * (.65 + Math.random() * .35)}px;--delay:${Math.random() * .5}s;--tilt:${Math.random() * 540}deg;background:${['#efc966', '#77dce9', '#c0abf0'][i % 3]}`;
+    confetti.append(piece);
+  }
+  dialog.append(confetti);
+  celebrationTimer = setTimeout(clearCelebration, 2400);
+}
+async function spinAgain(w) {
+  if (revealTransition || spinning || !presentationOptions(w).length || !dialog.open) return;
+  revealTransition = true;
+  clearTimeout(revealTimer);
+  const token = routeToken;
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  dialog.querySelectorAll('button').forEach(button => button.disabled = true);
+  dialog.classList.add('winner-leaving');
+  if (!reduced) await new Promise(resolve => setTimeout(resolve, 350));
+  if (token !== routeToken || !dialog.open) { revealTransition = false; return; }
+  clearCelebration(); dialog.close();
+  // Paint the unobscured wheel once before beginning another spin.
+  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  revealTransition = false;
+  if (token === routeToken && route().view === 'present' && current() === w) {
+    drawWheel(document.querySelector('#audience-wheel'), presentationOptions(w), { rotation }); spin(w);
+  }
+}
+function showWinnerHistory(w) {
+  showDialog(`<div class="history-dialog"><h2 id="history-title">Winner history</h2><div class="winner-history-list" tabindex="0" role="region" aria-label="Saved winners">${w.winnerHistory.length ? [...w.winnerHistory].reverse().map(record => `<div class="history-record"><span>${esc(record.label)}</span><time datetime="${esc(record.wonAt)}">${esc(new Date(record.wonAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }))}</time></div>`).join('') : '<p>No saved winners yet.</p>'}</div><div class="dialog-actions">${btn('clear-winner-history', 'Clear history', 'text-button', !w.winnerHistory.length ? 'disabled' : '')}${btn('dismiss', 'Close')}</div></div>`);
+  dialog.className = 'history-modal'; dialog.setAttribute('aria-labelledby', 'history-title');
 }
 function fitWinner() {
   const text = dialog.querySelector('#winner-name'); if (!text || !dialog.open) return;
-  let low = 1, high = Math.min(128, innerWidth * .1);
-  const height = Math.max(40, innerHeight - 200);
+  let low = 1, high = Math.min(128, innerWidth * .1) * .85;
+  const content = dialog.querySelector('.winner-content'), controls = dialog.querySelector('.winner-controls');
+  const padding = getComputedStyle(content);
+  const height = Math.max(24, controls.getBoundingClientRect().top - parseFloat(padding.paddingTop) - 24);
   for (let i = 0; i < 12; i++) {
     const size = (low + high) / 2; text.style.fontSize = `${size}px`;
     if (text.scrollHeight > height || text.scrollWidth > text.clientWidth + 1) high = size; else low = size;
@@ -113,7 +159,12 @@ function fitWinner() {
 }
 dialog.addEventListener('close', () => {
   clearTimeout(revealTimer);
+  clearCelebration();
   if (dialog.classList.contains('winner-reveal')) queueMicrotask(() => { if (!dialog.open) { const button = document.querySelector('[data-action="spin"]'); (button?.disabled ? document.querySelector('[data-action="back-editor"]') : button)?.focus({ preventScroll: true }); } });
+});
+dialog.addEventListener('cancel', event => {
+  if (revealTransition) event.preventDefault();
+  else { clearTimeout(revealTimer); clearCelebration(); }
 });
 async function toggleFullscreen() {
   try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); }
@@ -125,28 +176,27 @@ document.addEventListener('keydown', event => {
   event.preventDefault(); toggleFullscreen();
 });
 async function spin(w) {
-  if (spinning || !w.options.length) return;
-  spinning = true; const token = routeToken;
-  const list = slices(w.options), slice = selectSlice(list), winner = copy(slice.item);
-  const target = landingRotation(rotation, slice), group = drawWheel(document.querySelector('#audience-wheel'), w.options, { rotation, spinning: true });
+  const options = presentationOptions(w);
+  if (spinning || revealTransition || !options.length) return;
+  clearCelebration();
+  spinning = true; const token = routeToken, spinId = id();
+  const list = slices(options), slice = selectSlice(list), winner = copy(slice.item);
+  const target = landingRotation(rotation, slice), group = drawWheel(document.querySelector('#audience-wheel'), options, { rotation, spinning: true });
   document.querySelector('[data-action="spin"]').disabled = true;
   document.querySelector('[data-action="spin"]').textContent = 'Spinning…';
-  const duration = matchMedia('(prefers-reduced-motion: reduce)').matches ? 80 : 5040;
-  const animation = group.animate([{ transform: `rotate(${rotation}deg)` }, { transform: `rotate(${target}deg)` }], { duration, easing: 'cubic-bezier(.18,.05,.12,1)', fill: 'forwards' });
+  const duration = matchMedia('(prefers-reduced-motion: reduce)').matches ? 80 : 6048;
+  const frames = [{ transform: `rotate(${rotation}deg)` }, { transform: `rotate(${target}deg)` }];
+  const timing = { duration, easing: 'cubic-bezier(.18,.05,.12,1)', fill: 'forwards' };
+  const animation = group.animate(frames, timing);
+  group.rotationLayers.forEach(layer => layer.animate(frames, timing));
   await animation.finished;
   spinning = false;
+  if (data.wheels.includes(w) && recordWinner(w, winner, spinId)) save();
   if (token !== routeToken) return;
   rotation = target % 360;
-  drawWheel(document.querySelector('#audience-wheel'), w.options, { rotation });
-  // Reveal against the original slices first; keep this disc until the next spin.
+  if (w.removeWinner) removedWinnerIds.add(winner.id);
+  renderAudience(w);
   result(w, winner);
-  if (w.removeWinner) { edit(w, w => { w.options = w.options.filter(o => o.id !== winner.id); }); }
-  dialog.querySelector('[data-action="spin-again"]').disabled = !w.options.length;
-  if (!w.options.length && !dialog.querySelector('.empty-note')) {
-    const note = document.createElement('p'); note.className = 'empty-note'; note.textContent = 'No options remain.'; dialog.querySelector('.winner-controls').append(note);
-  }
-  if (!w.options.length) dialog.querySelector('.empty-note').hidden = false;
-  const spinButton = document.querySelector('[data-action="spin"]'); spinButton.disabled = !w.options.length; spinButton.textContent = 'Spin';
 }
 document.addEventListener('input', event => {
   const el = event.target, field = el.dataset.field, w = current();
@@ -175,16 +225,25 @@ document.addEventListener('click', async event => {
   const action = button.dataset.action, w = current();
   const cardWheel = data.wheels.find(w => w.id === button.closest('[data-wheel]')?.dataset.wheel);
   if (action === 'create') { const created = wheel('Untitled wheel'); data.wheels.push(created); save(); location.hash = `#/edit/${created.id}`; }
-  if (action === 'duplicate') { const duplicate = copy(cardWheel); duplicate.id = id(); duplicate.options.forEach(o => o.id = id()); duplicate.title += ' (copy)'; data.wheels.push(duplicate); save(); renderLibrary(); }
+  if (action === 'duplicate') { const duplicate = copy(cardWheel); duplicate.id = id(); duplicate.options.forEach(o => o.id = id()); duplicate.winnerHistory = []; duplicate.title += ' (copy)'; data.wheels.push(duplicate); save(); renderLibrary(); }
   if (action === 'delete') confirmAction('Delete wheel?', cardWheel.title || 'Untitled wheel', 'Delete', () => { data.wheels = data.wheels.filter(w => w.id !== cardWheel.id); histories.delete(cardWheel.id); save(); renderLibrary(); });
   if (action === 'export') download(JSON.stringify(data, null, 2), 'nawras-wheels.json');
   if (action === 'import') document.querySelector('#import-file').click();
   if (action === 'back-editor' && !spinning) location.hash = `#/edit/${w.id}`;
-  if (action === 'spin') { drawWheel(document.querySelector('#audience-wheel'), w.options, { rotation }); spin(w); }
+  if (action === 'spin' && !spinning && !revealTransition) spin(w);
   if (!w) return;
+  if (action === 'reset-presentation' && route().view === 'present' && !spinning && !revealTransition) {
+    if (dialog.open) dialog.close();
+    removedWinnerIds.clear(); rotation = 0; renderAudience(w);
+    document.querySelector('[data-action="spin"]').focus({ preventScroll: true });
+  }
+  if (action === 'winner-history') showWinnerHistory(w);
+  if (action === 'clear-winner-history') confirmAction('Clear winner history?', 'Only recorded results will be cleared. Your entries and presentation remain unchanged.', 'Clear history', () => {
+    w.winnerHistory = []; save(); showWinnerHistory(w);
+  });
   if (action === 'undo' || action === 'redo') {
     const h = history(w), from = h[action], to = h[action === 'undo' ? 'redo' : 'undo'];
-    if (!from.length) return; to.push(copy(w)); Object.assign(w, from.pop()); editGroup = null; save(); renderEditor(w);
+    if (!from.length) return; to.push(copy(w)); const recorded = w.winnerHistory; Object.assign(w, from.pop()); w.winnerHistory = recorded; editGroup = null; save(); renderEditor(w);
   }
   if (action === 'reset-colors') { edit(w, w => { w.options.forEach((o, index) => o.color = defaultColor(index)); }); renderEditor(w); }
   if (action === 'add-option') { edit(w, w => w.options.push(option('', w.options.length))); renderEditor(w); const inputs = app.querySelectorAll('[data-field="label"]'); inputs[inputs.length - 1].focus({ preventScroll: true }); inputs[inputs.length - 1].scrollIntoView({ block: 'nearest' }); }

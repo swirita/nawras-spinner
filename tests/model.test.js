@@ -1,7 +1,27 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { wheel, option, example, slices, selectSlice, landingRotation, validURL, validateData, load, STORAGE_KEY } from '../src/model.js';
+import { wheel, option, example, slices, selectSlice, landingRotation, validURL, validateData, load, STORAGE_KEY, recordWinner } from '../src/model.js';
 import { defaultColor, sectionStyle, contrast, tint } from '../src/colors.js';
+
+test('winner history records each completed spin once, preserves repeats and disabled history', () => {
+  const w = example(), winner = w.options[0], time = '2026-10-04T10:00:00.000Z';
+  const original = structuredClone(w.options);
+  assert.equal(recordWinner(w, winner, 'spin-1', time), false);
+  w.saveWinners = true;
+  assert.equal(recordWinner(w, winner, 'spin-1', time), true);
+  assert.equal(recordWinner(w, winner, 'spin-1', time), false);
+  assert.equal(recordWinner(w, winner, 'spin-2', time), true);
+  assert.equal(w.winnerHistory.length, 2); assert.deepEqual(w.options, original);
+  w.saveWinners = false; assert.equal(recordWinner(w, winner, 'spin-3', time), false);
+  const restored = load({ getItem: () => JSON.stringify({ version: 1, wheels: [w] }) }).data.wheels[0];
+  assert.equal(restored.saveWinners, false); assert.equal(restored.winnerHistory.length, 2);
+  const imported = validateData({ version: 1, wheels: [w] }, true).wheels[0];
+  assert.equal(imported.winnerHistory.length, 2); assert.notEqual(imported.winnerHistory[0].id, w.winnerHistory[0].id);
+  assert.equal(imported.winnerHistory[0].optionId, imported.options[0].id);
+  const legacy = structuredClone(w); delete legacy.saveWinners; delete legacy.winnerHistory;
+  assert.deepEqual(validateData({ version: 1, wheels: [legacy] }).wheels[0].winnerHistory, []);
+  const invalid = structuredClone(w); invalid.winnerHistory[0].wonAt = 'bad'; assert.throws(() => validateData({ version: 1, wheels: [invalid] }), /history/);
+});
 
 test('colors migrate from older data, survive transfer and stay attached to IDs', () => {
   const original = example(); original.options.forEach(o => delete o.color);
@@ -22,6 +42,7 @@ test('labels retain readable contrast across each gradient', () => {
     const style = sectionStyle(color);
     assert.ok(contrast(color, style.text) >= 4.5, `${color}: base`);
     assert.ok(contrast(tint(color, style.highlight), style.text) >= 4.5, `${color}: highlight`);
+    assert.ok(contrast(tint(tint(color, style.highlight), style.reflection), style.text) >= 4.5, `${color}: stationary reflection`);
   }
 });
 

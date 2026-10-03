@@ -69,7 +69,7 @@ try {
   assert.equal(await page.locator('#dialog').isVisible(), false);
   assert.equal(await page.locator('.slice-link').count(), 0);
   assert.equal(await page.getByRole('button', { name: /Spinning/ }).isEnabled(), false);
-  await page.locator('#dialog').waitFor({ state: 'visible', timeout: 7000 });
+  await page.locator('#dialog').waitFor({ state: 'visible', timeout: 8500 });
   const winner = await page.locator('.winner-content h2').textContent();
   const spinData = (await storage()).wheels[0];
   const angle = await page.locator('.wheel-disc').evaluate(el => Number(el.style.transform.match(/rotate\(([^d]+)deg\)/)[1]));
@@ -102,12 +102,13 @@ try {
   await page.waitForFunction(() => document.querySelectorAll('.option-row').length === 0);
   await click('+ Add option'); await page.getByLabel('Option 1 label', { exact: true }).fill('A very long winning option label that remains complete in the winner popup');
   await page.getByLabel('Link', { exact: true }).check(); await page.getByLabel('Option 1 URL', { exact: true }).fill('https://example.com/winner');
-  await page.getByLabel('Remove winner after each spin').check();
+  await page.getByLabel('Remove winners during presentation').check();
   await present(); await click('Spin'); await page.locator('#dialog').waitFor({ state: 'visible' });
   assert.equal(await page.getByRole('button', { name: 'Spin Again', exact: true }).isEnabled(), false);
   assert.equal(await page.getByRole('link', { name: /Open Link/ }).getAttribute('href'), 'https://example.com/winner');
-  const empty = (await storage()).wheels.find(w => w.title === 'Top Five'); assert.equal(empty.options.length, 0);
-  await click('Close winner'); await page.reload(); assert.equal(await page.getByRole('button', { name: 'Spin', exact: true }).isEnabled(), false);
+  const empty = (await storage()).wheels.find(w => w.title === 'Top Five'); assert.equal(empty.options.length, 1);
+  await click('Close winner'); assert.equal(await page.getByRole('button', { name: 'Spin', exact: true }).isEnabled(), false);
+  await page.reload(); assert.equal(await page.getByRole('button', { name: 'Spin', exact: true }).isEnabled(), true);
   await page.evaluate(() => localStorage.setItem('nawras-spinner:v1', 'damaged-data')); await page.reload();
   await click('+ Create Wheel'); await page.getByLabel('Wheel title', { exact: true }).fill('Protected');
   assert.equal(await page.evaluate(() => localStorage.getItem('nawras-spinner:v1')), 'damaged-data');

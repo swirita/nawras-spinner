@@ -14,6 +14,7 @@ const setColor = async (number, value) => {
 };
 try {
   await page.goto(url); await page.getByRole('link', { name: 'Edit', exact: true }).click();
+  await page.getByLabel('Option 1 color', { exact: true }).waitFor({ state: 'visible' });
   assert.equal(await page.locator('input[type=color]').count(), 8);
   const original = (await saved()).wheels[0];
   await setColor(1, '#101020'); await setColor(2, '#fafafa');
@@ -53,8 +54,10 @@ try {
   await page.setViewportSize({ width: 1440, height: 900 }); await page.getByRole('link', { name: /^Present/ }).click();
   await page.emulateMedia({ reducedMotion: 'no-preference' }); await click('Spin');
   const timing = await page.locator('.wheel-disc').evaluate(el => el.getAnimations()[0].effect.getTiming());
-  assert.equal(timing.duration, 5040); assert.equal(await page.getByRole('button', { name: /Spinning/ }).isEnabled(), false);
+  assert.equal(timing.duration, 6048);
+  assert.equal(await page.locator('.wheel-reflection').evaluate(el => el.getAnimations().length), 0);
+  assert.equal(await page.locator('.wheel-labels').evaluate(el => el.getAnimations()[0].effect.getTiming().duration), 6048); assert.equal(await page.getByRole('button', { name: /Spinning/ }).isEnabled(), false);
   assert.equal(await page.locator('#dialog').isVisible(), false);
   await page.locator('.winner-reveal').waitFor({ state: 'visible', timeout: 8000 });
-  assert.deepEqual(errors, []); console.log('Color checks passed: live contrast, refresh, color/reset undo-redo, rename/weight/ID stability, JSON transfer, mobile fit, and 5040ms guarded spin.');
+  assert.deepEqual(errors, []); console.log('Color checks passed: live contrast, refresh, color/reset undo-redo, rename/weight/ID stability, JSON transfer, mobile fit, and 6048ms guarded spin.');
 } finally { await browser.close(); }

@@ -1,0 +1,23 @@
+/* No animated blur: static SVG gradients, shadows, and compositor animations. */
+.centre-logo{width:18.4%;height:18.4%}.mini .centre-logo{width:23%;height:23%}
+.slice-label{font-weight:500;letter-spacing:0}
+.wheel-wrap::before{box-shadow:0 18px 30px #1934511a,0 4px 9px #1934510a}
+.wheel-labels,.reflection-mask{transform-box:view-box;pointer-events:none}.wheel-reflection{pointer-events:none}
+dialog.winner-reveal::backdrop{background:rgb(0 0 0 / .94)}
+.winner-content{min-height:100%;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:60px 7vw;text-align:center}
+.winner-content h2{flex-shrink:0;text-shadow:0 0 20px #ffffff20,0 0 45px #ffffff12;animation:winner-enter .55s cubic-bezier(.2,.8,.3,1) both,winner-glow 5s 1s ease-in-out infinite}
+.winner-controls{position:static;bottom:auto;left:auto;width:100%;padding:0;margin-top:clamp(36px,6dvh,64px);flex-shrink:0;animation:controls-enter .3s ease-out both}
+.winner-controls[hidden]{display:block;visibility:hidden;pointer-events:none;animation:none}
+.winner-controls .dialog-actions{margin:0;justify-content:center;gap:14px}
+.winner-controls button,.winner-controls .button{background:linear-gradient(145deg,#ffffff16,#ffffff08);border:1px solid #ffffff30;box-shadow:inset 0 1px 0 #ffffff1c,0 5px 16px #0000001a;min-height:44px;padding:10px 19px}
+.winner-controls button:hover,.winner-controls .button:hover{background:#ffffff20}
+.winner-controls .close-dialog{position:fixed;right:22px;top:20px;width:34px;height:34px;min-height:34px;display:grid;place-items:center;padding:8px;background:transparent;box-shadow:none;border:0;border-radius:9px}
+.close-dialog svg{display:block;width:18px;height:18px;pointer-events:none}
+.confetti i{left:var(--x);top:var(--y);animation:burst 1.65s var(--delay) cubic-bezier(.15,.6,.2,1) forwards}
+.winner-sparkles{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.winner-sparkles i{position:absolute;width:var(--sparkle-size);height:var(--sparkle-size);background:#fff;border-radius:50%;opacity:0;box-shadow:0 0 8px #ffffff60;animation:twinkle 1.5s var(--delay) ease-in-out both}
+@keyframes winner-glow{0%,100%{opacity:1}50%{opacity:.91}}
+@keyframes twinkle{0%,100%{opacity:0;transform:scale(.6)}45%{opacity:.7;transform:scale(1)}}
+@media(max-width:640px){.winner-content{padding:55px 6vw}.winner-controls{margin-top:36px}}
+@media(max-height:450px){.winner-content{padding:42px 6vw}.winner-controls{margin-top:30px}}
+@media(prefers-reduced-motion:reduce){.winner-content h2,.winner-controls,.winner-sparkles i{animation:none!important}.confetti,.winner-sparkles{display:none}}

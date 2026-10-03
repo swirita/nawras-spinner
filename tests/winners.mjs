@@ -1,0 +1,56 @@
+import { chromium } from '@playwright/test';
+import assert from 'node:assert/strict';
+import { wheel } from '../src/model.js';
+const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || (process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : undefined), headless: true });
+const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
+const page = await context.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
+const url = process.env.CHECK_URL || 'http://127.0.0.1:4175/';
+const w = wheel('Saved results', ['Repeat Winner']);
+const getWheel = () => page.evaluate(() => JSON.parse(localStorage.getItem('nawras-spinner:v1')).wheels[0]);
+const click = name => page.getByRole('button', { name, exact: true }).click();
+try {
+  await page.goto(url); await page.evaluate(w => localStorage.setItem('nawras-spinner:v1', JSON.stringify({ version: 1, wheels: [w] })), w);
+  await page.goto(`${url}#/edit/${w.id}`); await page.reload();
+  assert.equal(await page.getByLabel('Save winners', { exact: true }).isChecked(), false);
+  await page.getByLabel('Save winners', { exact: true }).check(); await page.reload();
+  assert.equal(await page.getByLabel('Save winners', { exact: true }).isChecked(), true);
+  await page.getByRole('link', { name: /^Present/ }).click(); await click('Spin');
+  await page.locator('.winner-reveal').waitFor({ state: 'visible' });
+  assert.equal((await getWheel()).winnerHistory.length, 1); assert.equal((await getWheel()).options.length, 1);
+  await page.locator('.winner-controls').waitFor({ state: 'visible' }); await click('Spin Again');
+  await page.locator('#dialog').waitFor({ state: 'hidden' }); await page.locator('.winner-reveal').waitFor({ state: 'visible' });
+  assert.equal((await getWheel()).winnerHistory.length, 2); assert.notEqual((await getWheel()).winnerHistory[0].id, (await getWheel()).winnerHistory[1].id);
+  await page.keyboard.press('Escape'); await click('← Back'); await click('Winner history');
+  assert.equal(await page.locator('.history-record').count(), 2);
+  assert.equal(await page.locator('time').count(), 2); await click('Close');
+  await page.getByLabel('Save winners', { exact: true }).uncheck();
+  await click('Undo'); assert.equal((await getWheel()).winnerHistory.length, 2); assert.equal((await getWheel()).saveWinners, true);
+  await click('Redo'); assert.equal((await getWheel()).winnerHistory.length, 2); assert.equal((await getWheel()).saveWinners, false);
+  await page.getByRole('link', { name: /^Present/ }).click(); await click('Spin'); await page.locator('.winner-reveal').waitFor({ state: 'visible' });
+  assert.equal((await getWheel()).winnerHistory.length, 2);
+  for (const size of [{ width: 1440, height: 900 }, { width: 320, height: 568 }, { width: 390, height: 450 }]) {
+    await page.setViewportSize(size); await page.locator('.winner-controls').waitFor({ state: 'visible' });
+    const footer = await page.locator('.winner-controls').boundingBox(); assert.ok(footer.y + footer.height <= size.height + 1);
+    const button = await page.getByRole('button', { name: 'Spin Again', exact: true }).boundingBox(); assert.ok(button.y + button.height < size.height - 15);
+    assert.equal(await page.locator('.winner-reveal').evaluate(el => el.scrollHeight <= el.clientHeight && el.scrollWidth <= el.clientWidth), true);
+  }
+  await page.keyboard.press('Escape'); await page.reload(); assert.equal((await getWheel()).winnerHistory.length, 2);
+  await page.setViewportSize({ width: 1440, height: 900 }); await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await click('Spin'); await page.locator('.winner-reveal').waitFor({ state: 'visible', timeout: 8500 });
+  const emitters = await page.locator('.confetti i').evaluateAll(items => items.map(el => ({ left: getComputedStyle(el).left, top: getComputedStyle(el).top })));
+  assert.equal(emitters.length, 32); assert.ok(emitters.every(p => p.left === '720px' && p.top === '900px'));
+  assert.equal(await page.locator('.winner-sparkles').count(), 0);
+  await page.locator('.winner-controls').waitFor({ state: 'visible' });
+  await page.screenshot({ path: '.checks/winner-footer.png' });
+  const began = Date.now(); await click('Spin Again');
+  assert.equal(await page.locator('.winner-leaving').isVisible(), true);
+  assert.equal(await page.getByRole('button', { name: 'Spin Again', exact: true }).isEnabled(), false);
+  assert.equal(await page.locator('.wheel-disc').evaluate(el => el.getAnimations().length), 0);
+  await page.locator('#dialog').waitFor({ state: 'hidden' }); assert.ok(Date.now() - began >= 300);
+  await page.getByRole('button', { name: /Spinning/ }).waitFor({ state: 'visible' });
+  assert.equal(await page.locator('.confetti').count(), 0);
+  await page.locator('.winner-reveal').waitFor({ state: 'visible', timeout: 8500 });
+  assert.equal((await getWheel()).winnerHistory.length, 2);
+  await page.keyboard.press('Escape'); assert.equal(await page.locator('.confetti').count(), 0);
+  assert.deepEqual(errors, []); console.log('Winner checks passed: preference persistence, repeated/once-only records, disabled recording, history UI, undo isolation, responsive footer, bottom-centre fountain and guarded fade-before-spin.');
+} finally { await browser.close(); }

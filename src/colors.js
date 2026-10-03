@@ -11,13 +11,19 @@ export function luminance(hex) {
   return channels[0] * .2126 + channels[1] * .7152 + channels[2] * .0722;
 }
 export const contrast = (a, b) => (Math.max(luminance(a), luminance(b)) + .05) / (Math.min(luminance(a), luminance(b)) + .05);
+function readableReflection(color, text, highlight) {
+  if (text !== '#ffffff') return .18;
+  let opacity = .18;
+  while (opacity > 0 && contrast(tint(tint(color, highlight), opacity), text) < 4.5) opacity = Math.max(0, opacity - .01);
+  return opacity;
+}
 export function sectionStyle(color) {
   const dark = '#142c4d';
-  if (contrast(color, dark) >= 4.5) return { text: dark, highlight: .21 };
-  if (contrast(color, '#0b1424') >= 4.5) return { text: '#0b1424', highlight: .15 };
-  if (contrast(color, '#000000') >= 4.5) return { text: '#000000', highlight: .1 };
+  if (contrast(color, dark) >= 4.5) return { text: dark, highlight: .21, reflection: .18 };
+  if (contrast(color, '#0b1424') >= 4.5) return { text: '#0b1424', highlight: .15, reflection: .18 };
+  if (contrast(color, '#000000') >= 4.5) return { text: '#000000', highlight: .1, reflection: .18 };
   // Limit the glass highlight on dark slices so white labels retain contrast.
   let highlight = .1;
   while (highlight > 0 && contrast(tint(color, highlight), '#ffffff') < 4.5) highlight = Math.max(0, highlight - .01);
-  return { text: '#ffffff', highlight };
+  return { text: '#ffffff', highlight, reflection: readableReflection(color, '#ffffff', highlight) };
 }
