@@ -1,0 +1,85 @@
+import { chromium } from '@playwright/test';
+import assert from 'node:assert/strict';
+import { mkdir } from 'node:fs/promises';
+import { example, option, slices } from '../src/model.js';
+await mkdir('.checks', { recursive: true });
+const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || (process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : undefined), headless: true });
+const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
+const page = await context.newPage(), errors = [];
+page.on('pageerror', error => errors.push(error.message));
+const target = process.env.CHECK_URL || 'http://127.0.0.1:4173/';
+const w = example(); w.options[0].adjustWeight = true; w.options[0].weight = 2.5; w.options[0].linkEnabled = true; w.options[0].url = 'https://example.com/activity';
+w.options = w.options.concat(Array.from({ length: 31 }, (_, i) => option(`Player ${i + 9}`)));
+const click = name => page.getByRole('button', { name, exact: true }).click();
+const checkFits = async () => {
+  const geometry = await page.evaluate(() => ({ height: innerHeight, scroll: document.documentElement.scrollHeight, width: innerWidth, scrollWidth: document.documentElement.scrollWidth, controls: [...document.querySelectorAll('.editor-pane button,.remove-winner,.editor-top,.title-input')].map(el => { const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; }) }));
+  assert.ok(geometry.scroll <= geometry.height + 1, JSON.stringify(geometry)); assert.ok(geometry.scrollWidth <= geometry.width);
+  assert.ok(geometry.controls.every(r => r.top >= 0 && r.bottom <= geometry.height));
+};
+try {
+  await page.goto(target); await page.evaluate(data => localStorage.setItem('nawras-spinner:v1', JSON.stringify(data)), { version: 1, wheels: [w] });
+  await page.goto(`${target}#/edit/${w.id}`); await page.reload();
+  await checkFits();
+  await page.screenshot({ path: '.checks/polished-editor.png', fullPage: true });
+  await click('Next page');
+  const firstVisible = await page.locator('[data-field="label"]').first().getAttribute('aria-label');
+  await page.locator('[data-field="label"]').first().fill('Exact edited name');
+  await click('Undo'); assert.notEqual(await page.locator('[data-field="label"]').first().inputValue(), 'Exact edited name');
+  await click('Redo'); assert.equal(await page.locator('[data-field="label"]').first().inputValue(), 'Exact edited name');
+  await click('+ Add option'); assert.equal(await page.locator('[data-field="label"]').last().evaluate(el => document.activeElement === el), true);
+  await page.reload(); assert.equal(await page.getByRole('button', { name: 'Next page' }).isEnabled(), true);
+  for (const viewport of [{ width: 1366, height: 768 }, { width: 1024, height: 640 }]) { await page.setViewportSize(viewport); await page.waitForTimeout(200); await checkFits(); }
+  // Expand every visible row to test the worst-case pane height.
+  for (let i = 0; i < await page.getByLabel('Link', { exact: true }).count(); i++) await page.getByLabel('Link', { exact: true }).nth(i).check();
+  await checkFits();
+  await page.setViewportSize({ width: 640, height: 450 }); await page.waitForTimeout(200);
+  assert.equal(await page.getByLabel('Remove winner after each spin').isVisible(), true);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await page.setViewportSize({ width: 1440, height: 900 }); await page.waitForTimeout(200);
+  await page.getByLabel('Wheel title', { exact: true }).focus(); await page.keyboard.press('f'); assert.equal(await page.evaluate(() => !!document.fullscreenElement), false);
+  await page.getByRole('link', { name: /^Present/ }).click();
+  w.options = w.options.slice(0, 8);
+  await page.evaluate(data => localStorage.setItem('nawras-spinner:v1', JSON.stringify(data)), { version: 1, wheels: [w] }); await page.reload();
+  assert.equal(await page.getByRole('button', { name: /Fullscreen/ }).count(), 0);
+  assert.equal(await page.locator('#header .brand').count(), 0);
+  for (const tag of ['input', 'textarea', 'div']) {
+    await page.evaluate(tag => { const el = document.createElement(tag); el.id = 'typing-test'; if (tag === 'div') el.contentEditable = 'true'; document.body.append(el); el.focus(); }, tag);
+    await page.keyboard.press('f'); assert.equal(await page.evaluate(() => !!document.fullscreenElement), false);
+    await page.locator('#typing-test').evaluate(el => el.remove());
+  }
+  await page.keyboard.press('f'); await page.waitForFunction(() => !!document.fullscreenElement);
+  await page.keyboard.press('f'); await page.waitForFunction(() => !document.fullscreenElement);
+  await page.screenshot({ path: '.checks/polished-audience.png', fullPage: true });
+  await context.route('https://example.com/**', route => route.fulfill({ body: 'Link works' }));
+  const newTab = page.waitForEvent('popup'); await page.getByRole('link', { name: 'Open link for Wordle' }).click(); const popup = await newTab;
+  await popup.waitForLoadState(); assert.equal(await popup.evaluate(() => opener === null), true); await popup.close();
+  await page.emulateMedia({ reducedMotion: 'no-preference' }); await click('Spin');
+  assert.equal(await page.locator('.slice-link').count(), 0);
+  await page.locator('.winner-reveal').waitFor({ state: 'visible', timeout: 7000 });
+  assert.equal(await page.locator('.winner-controls').isVisible(), false);
+  assert.equal(await page.locator('.winner-eyebrow,.winner-mark').count(), 0);
+  const original = await page.evaluate(() => JSON.parse(localStorage.getItem('nawras-spinner:v1')).wheels[0]);
+  const angle = await page.locator('.wheel-disc').evaluate(el => Number(el.style.transform.match(/rotate\(([^d]+)deg\)/)[1]));
+  const pointed = slices(original.options).find(s => (360 - angle % 360) % 360 >= s.start && (360 - angle % 360) % 360 < s.end);
+  assert.equal(await page.locator('#winner-name').textContent(), pointed.item.label.trim() || 'Untitled option');
+  assert.equal(await page.locator('.winner-reveal').evaluate(el => el.scrollHeight <= el.clientHeight), true);
+  await page.locator('.winner-controls').waitFor({ state: 'visible' }); await page.waitForTimeout(300);
+  assert.ok((await page.getByRole('button', { name: 'Close winner' }).boundingBox()).y < 60);
+  await page.screenshot({ path: '.checks/polished-winner.png' });
+  await page.keyboard.press('Escape'); assert.equal(await page.locator('#dialog').isVisible(), false);
+  assert.equal(await page.getByRole('button', { name: 'Spin', exact: true }).evaluate(el => el === document.activeElement), true);
+  const long = 'A very long activity name with graceful wrapping and the exact original option text '.repeat(15);
+  w.options = [option(long)]; w.removeWinner = true; w.options[0].linkEnabled = true; w.options[0].url = 'https://example.com/winner';
+  await page.evaluate(data => localStorage.setItem('nawras-spinner:v1', JSON.stringify(data)), { version: 1, wheels: [w] }); await page.reload();
+  await page.setViewportSize({ width: 390, height: 844 }); await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.screenshot({ path: '.checks/polished-mobile.png', fullPage: true });
+  await click('Spin'); await page.locator('.winner-reveal').waitFor({ state: 'visible' });
+  assert.equal(await page.locator('#winner-name').textContent(), long.trim());
+  assert.equal(await page.locator('.winner-reveal').evaluate(el => el.scrollHeight <= el.clientHeight && el.scrollWidth <= el.clientWidth), true);
+  assert.equal(await page.locator('.confetti').count(), 0);
+  await page.locator('.winner-controls').waitFor({ state: 'visible' });
+  assert.equal(await page.getByRole('button', { name: 'Spin Again', exact: true }).isEnabled(), false);
+  assert.equal(await page.getByRole('link', { name: /Open Link/ }).getAttribute('href'), 'https://example.com/winner');
+  await page.keyboard.press('Escape'); assert.equal(await page.getByRole('button', { name: /Back$/ }).evaluate(el => el === document.activeElement), true);
+  assert.deepEqual(errors, []); console.log('Polish checks passed: desktop fit, pagination/history/focus, mobile/zoom, F fullscreen, slice links, weighted pointer, full-screen reveal, delayed controls, Escape focus, long text, reduced motion and winner removal.');
+} finally { await browser.close(); }
