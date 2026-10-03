@@ -14,6 +14,7 @@ const original = structuredClone(w.options);
 const saved = () => page.evaluate(() => JSON.parse(localStorage.getItem('nawras-spinner:v1')).wheels[0]);
 const click = name => page.getByRole('button', { name, exact: true }).click();
 const assertWheel = async labels => {
+  await page.locator('#audience-wheel').waitFor({ state: 'visible' });
   assert.deepEqual(await page.locator('#audience-wheel .slice-label').allTextContents(), labels);
   assert.deepEqual((await saved()).options, original);
 };

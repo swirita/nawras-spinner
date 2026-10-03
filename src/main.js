@@ -242,15 +242,21 @@ dialog.addEventListener('cancel', event => {
   if (revealTransition) event.preventDefault();
   else { clearTimeout(revealTimer); clearCelebration(); }
 });
+let fullscreenPending = false;
 async function toggleFullscreen() {
+  if (fullscreenPending || !document.fullscreenEnabled) return;
+  fullscreenPending = true;
   try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); }
-  catch { message('Fullscreen is unavailable in this browser.'); }
+  catch { /* Unsupported or rejected fullscreen leaves the app usable. */ }
+  finally { fullscreenPending = false; }
 }
 document.addEventListener('keydown', event => {
-  if (event.key.toLowerCase() !== 'f' || event.repeat || event.ctrlKey || event.metaKey || event.altKey || route().view !== 'present' || dialog.open) return;
-  if (event.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return;
+  if (event.key.toLowerCase() !== 'f' || event.repeat || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
+  const target = event.target;
+  if (target instanceof Element && (target.closest('input, textarea, select') || target.isContentEditable)) return;
   event.preventDefault(); toggleFullscreen();
 });
+document.addEventListener('fullscreenchange', () => { if (dialog.open && dialog.classList.contains('winner-reveal')) fitWinner(); });
 async function spin(w) {
   const options = presentationOptions(w);
   if (spinning || revealTransition || !options.length) return;
@@ -285,7 +291,6 @@ async function spin(w) {
   spinning = false;
   document.body.classList.remove('wheel-moving');
   if (data.wheels.includes(w) && recordWinner(w, winner, spinId)) save();
-  if (token !== routeToken) return;
   rotation = target % 360;
   if (w.removeWinner) removedWinnerIds.add(winner.id);
   renderAudience(w);

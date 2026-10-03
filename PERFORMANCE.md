@@ -35,4 +35,4 @@ Production build and all 10 unit tests passed. The general browser, layout/polis
 
 The audio suite checks every emitted tick against a rendered weighted boundary, with alternating nonoverlapping tones and no catch-up burst after a 220 ms main-thread stall. The audio unit test verifies the exponential envelope, cancellation gain at onset/mid-decay/tail, oscillator cleanup, mute, and unchanged winner pitches, slides, delays, and durations. The final performance/resource checks passed with `PERF_ASSERT=1`.
 
-The color-specific browser suite did not run because its Chrome execution request was rejected by the user. Color migration, ID stability, transfer, and contrast unit tests passed. No push or deployment was performed.
+During the cleanup comparison, the color-specific browser launch was rejected by the user; color migration, ID stability, transfer, and contrast unit tests passed. The color browser suite subsequently ran and passed during final Pages preparation under `/nawras-spinner/`. No push or deployment was performed.

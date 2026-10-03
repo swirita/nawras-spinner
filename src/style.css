@@ -214,15 +214,6 @@ h2 {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  border-left: 13px solid transparent;
-  border-right: 13px solid transparent;
-  border-top: 30px solid #142c4d;
-}
-
-.mini .pointer {
-  border-left-width: 8px;
-  border-right-width: 8px;
-  border-top-width: 19px;
 }
 
 .slice-label {

@@ -2,22 +2,22 @@
 
 A static, offline-friendly wheel app for NawrasEdu events, built with Vite and vanilla JavaScript. Original logos are preserved in `public/assets/`.
 
-Requires Node.js 20.19+ or 22.12+.
+Use Node.js 24 for local development and deployment, matching the Pages workflow.
 
 ```sh
-npm install
+npm ci
 npm run dev
 ```
 
 Open the local URL printed by Vite. `npm run build` creates `dist/`; `npm run preview` serves the production build. `npm test` checks data validation and weighted landing geometry. With the dev server running, `npm run test:browser` checks the main flows and writes screenshots to `.checks/`. Browser checks use installed Chrome on Windows; set `CHROME_PATH` to override, or install Playwright Chromium on other platforms. Set `CHECK_URL` to test a different URL, including a production preview.
 
-My Wheels supports create, duplicate, delete, JSON export and import. The editor autosaves each wheel, supports undo/redo for the current session, multiline paste, positive decimal weights, optional HTTP/HTTPS links, and automatic winner removal. All options appear in one continuous list with a thin scrollbar and contained scrolling. The editor fits the viewport on desktop and smaller screens; its title, history toolbar and bottom actions remain visible outside the scrolling entries region. Adding an option scrolls its input into view and focuses it. Audience View has weighted spinning and a full-screen black winner reveal. Controls appear after a one-second pause; Escape dismisses the reveal and restores focus. Press F in Audience View to toggle fullscreen (ignored while typing). Empty labels display as “Untitled option.” Blank lines in pasted lists are skipped. Labels shrink or disappear on dense wheels; names are never abbreviated and winner text is always complete. Decorative wheel layers do not intercept slice links. The circular logo in `public/assets/nawras-circle.png` is displayed with its original proportions and transparency and without an added CSS frame. Header logos are centered relative to the viewport, independently of side controls.
+My Wheels supports create, duplicate, delete, JSON export and import. The editor autosaves each wheel, supports undo/redo for the current session, multiline paste, positive decimal weights, optional HTTP/HTTPS links, and automatic winner removal. All options appear in one continuous list with a thin scrollbar and contained scrolling. The editor fits the viewport on desktop and smaller screens; its title, history toolbar and bottom actions remain visible outside the scrolling entries region. Adding an option scrolls its input into view and focuses it. Audience View has weighted spinning and a full-screen black winner reveal. Controls appear after a one-second pause; Escape dismisses the reveal and restores focus. Press F on any screen to toggle fullscreen for the entire app. The shortcut ignores typing, composition, Ctrl/Alt/Meta, and held-key repeats. Escape keeps the browser?s normal fullscreen exit behavior. Unsupported or rejected requests are handled silently. Empty labels display as “Untitled option.” Blank lines in pasted lists are skipped. Labels shrink or disappear on dense wheels; names are never abbreviated and winner text is always complete. Decorative wheel layers do not intercept slice links. The circular logo in `public/assets/nawras-circle.png` is displayed with its original proportions and transparency and without an added CSS frame. Header logos are centered relative to the viewport, independently of side controls.
 
 With a production preview running on port 4173, `npm run test:polish` checks desktop and mobile viewport fit, continuous entry scrolling, fullscreen shortcuts, winner layout and focus, mobile layout, links, and weighted pointer accuracy. Override `CHECK_URL` if the preview uses another port. Both browser suites run in isolated browser contexts and do not modify your regular browser's saved wheels.
 
 Wheels use versioned localStorage (`nawras-spinner:v1`). Localhost and a deployed site have separate storage: export JSON locally and import it on the deployed site. Import assigns new IDs. Invalid enabled URLs are kept editable locally but rejected on import until fixed or disabled. Unreadable storage is left untouched and saving is paused; export new work before closing that tab. Storage failures show a warning. An external storage change pauses saving to prevent another tab's work being overwritten. The editable example is created only when the storage key has never existed; deleting it leaves an empty saved library.
 
-Navigation uses hashes, so direct screen refreshes work on GitHub Pages. The default Vite base is `./`. For a repository path, set `VITE_BASE_PATH=/repository-name/` when building (PowerShell: `$env:VITE_BASE_PATH='/repository-name/'; npm run build`). Asset paths use Vite's base. No repository was initialized and no push or deployment is included. Configure GitHub Actions in the next stage.
+Navigation uses hashes, so direct screen refreshes work on GitHub Pages. The configured remote is `https://github.com/swirita/nawras-spinner.git`, and production builds/previews default to `/nawras-spinner/`. Development uses `/`. Asset paths use Vite's base, including the favicon and dynamically created logos. `VITE_BASE_PATH` can override it for a custom domain or another hosting path. The Pages workflow obtains the path from GitHub's Pages metadata.
 
 No backend, accounts, analytics, external fonts or paid services. Fullscreen depends on browser support. Optional links open only when clicked, with `noopener noreferrer`.
 
@@ -34,3 +34,14 @@ Wheel views now reuse their SVG geometry and color contrast calculations. Renami
 Screen changes cancel spin and reveal work, including the fade timer, animation frames, completed animation effects, celebrations, and audio. Dialog controls use persistent delegated listeners, and closed dialog contents are removed. Decorative background particles pause while spinning or when the page is hidden. Reduced-motion changes also clear existing celebrations. Audio retains boundary-triggered ticks, exponential decay, pitch slides, and the original winner notes.
 
 `npm run test:performance` runs the repeatable editing/spinning/transition scenario and writes measurements to `.checks/performance-sample.json` (default preview port 4176). Set `PERF_LABEL` to name the result and `PERF_ASSERT=1` to check wheel reuse and resource cleanup. See [PERFORMANCE.md](PERFORMANCE.md) for the measured comparison and verification details. Both declared development dependencies are required; the lockfile, build configuration, and all original logo assets are retained.
+
+## GitHub Pages
+
+The workflow follows the [official GitHub Pages workflow guidance](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages) and [Vite?s Pages base-path guidance](https://vite.dev/guide/static-deploy.html#github-pages). It builds with Node 24 and the existing lockfile, uploads only `dist`, and deploys through the `github-pages` environment.
+
+1. In [swirita/nawras-spinner Settings ? Pages](https://github.com/swirita/nawras-spinner/settings/pages), set **Build and deployment ? Source ? GitHub Actions**.
+2. When you are ready, commit and push the prepared files to `main`. A push starts the workflow. No push or deployment has been performed during local preparation.
+3. To trigger it manually after the workflow is on GitHub, open **Actions ? Deploy Nawras Spinner to GitHub Pages ? Run workflow**, select `main`, and run it. Allow deployment from `main` in the `github-pages` environment if repository rules require it.
+4. Use the deployment URL shown in the workflow; the normal repository URL is `https://swirita.github.io/nawras-spinner/`. Local and Pages storage have different origins, so export/import your wheels to transfer them.
+
+For local verification, run `npm ci`, `npm test`, `npm run build`, then `npm run preview -- --port 4180 --strictPort`. Open `http://127.0.0.1:4180/nawras-spinner/`. Set `CHECK_URL` to that full URL (including the repository path and trailing slash) for browser checks. `npm run test:fullscreen` checks the app-wide shortcut. See [AUDIT.md](AUDIT.md) for exact removals, retained uncertain items, and preparation details.

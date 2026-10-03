@@ -4,3 +4,13 @@ dist/
 test-results/
 playwright-report/
 *.local
+*.log
+.env
+.env.*
+!.env.example
+coverage/
+.browser-check*/
+.ui-check*/
+.browser-asset-check*/
+*-stdout*.txt
+*-stderr*.txt
