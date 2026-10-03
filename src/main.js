@@ -3,9 +3,12 @@ import './polish.css';
 import './editor-layout.css';
 import './frosted.css';
 import './winner-footer.css';
+import './notification.css';
 import { VERSION, STORAGE_KEY, id, copy, wheel, option, load, validateData, slices, selectSlice, landingRotation, labelFor, linkFor, recordWinner } from './model.js';
 import { drawWheel } from './wheel.js';
 import { colorFor, defaultColor } from './colors.js';
+import { resumeAudio, cancelSounds, playSound } from './audio.js';
+import { trackSpinTicks } from './spin-audio.js';
 
 const app = document.querySelector('#app'), header = document.querySelector('#header'), notice = document.querySelector('#notice'), dialog = document.querySelector('#dialog');
 let storage;
@@ -17,6 +20,14 @@ const editorScroll = new Map();
 let revealTimer;
 let celebrationTimer;
 let revealTransition = false;
+let activeSpin;
+function cancelSpin() {
+  activeSpin?.stopTicks?.();
+  cancelSounds();
+  activeSpin?.animations.forEach(animation => animation.cancel());
+  activeSpin = null;
+  spinning = false;
+}
 // Presentation exclusions are transient and never become part of saved wheel data.
 let removedWinnerIds = new Set();
 const presentationOptions = w => w.options.filter(o => !removedWinnerIds.has(o.id));
@@ -29,7 +40,32 @@ const btn = (action, text, cls = '', extra = '') => `<button type="button" data-
 const route = () => { const [, view, id] = location.hash.split('/'); return { view: view || 'wheels', id }; };
 const current = () => data.wheels.find(w => w.id === route().id);
 const history = w => { if (!histories.has(w.id)) histories.set(w.id, { undo: [], redo: [] }); return histories.get(w.id); };
-function message(text) { notice.textContent = text; notice.classList.toggle('visible', !!text); }
+let noticeAnimation;
+function message(text) {
+  noticeAnimation?.cancel();
+  noticeAnimation = null;
+  notice.querySelector('.notice-dismiss').disabled = false;
+  notice.querySelector('.notice-message').textContent = text;
+  notice.classList.toggle('visible', !!text);
+}
+notice.querySelector('.notice-dismiss').addEventListener('click', async () => {
+  if (noticeAnimation || !notice.classList.contains('visible')) return;
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) { message(''); return; }
+  const style = getComputedStyle(notice);
+  const animation = notice.animate([
+    { height: `${notice.getBoundingClientRect().height}px`, opacity: 1,
+      paddingTop: style.paddingTop, paddingBottom: style.paddingBottom,
+      marginTop: style.marginTop, marginBottom: style.marginBottom,
+      borderTopWidth: style.borderTopWidth, borderBottomWidth: style.borderBottomWidth },
+    { height: '0px', opacity: 0, paddingTop: '0px', paddingBottom: '0px',
+      marginTop: '0px', marginBottom: '0px', borderTopWidth: '0px', borderBottomWidth: '0px' }
+  ], { duration: 240, easing: 'ease-in-out' });
+  noticeAnimation = animation;
+  notice.querySelector('.notice-dismiss').disabled = true;
+  try { await animation.finished; }
+  catch { return; } // A newer notification replaces the outgoing message.
+  if (noticeAnimation === animation) message('');
+});
 function save() {
   if (blocked) { lastSave = false; message('Saving is paused: existing storage could not be read. Your original data is untouched. Export your current wheels to keep them.'); return false; }
   try { storage.setItem(STORAGE_KEY, JSON.stringify(data)); lastSave = true; return true; }
@@ -71,6 +107,7 @@ function confirmAction(title, text, action, callback) {
   dialog.addEventListener('close', () => { if (dialog.returnValue === 'confirm') callback(); }, { once: true });
 }
 function render() {
+  cancelSpin();
   routeToken++; rotation = 0; editGroup = null;
   removedWinnerIds = new Set();
   revealTransition = false;
@@ -126,6 +163,8 @@ function result(w, winner) {
 async function spinAgain(w) {
   if (revealTransition || spinning || !presentationOptions(w).length || !dialog.open) return;
   revealTransition = true;
+  void resumeAudio();
+  cancelSounds();
   clearTimeout(revealTimer);
   const token = routeToken;
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -180,6 +219,11 @@ async function spin(w) {
   if (spinning || revealTransition || !options.length) return;
   clearCelebration();
   spinning = true; const token = routeToken, spinId = id();
+  const run = { animations: [] };
+  activeSpin = run;
+  cancelSounds();
+  await resumeAudio();
+  if (token !== routeToken || activeSpin !== run) return;
   const list = slices(options), slice = selectSlice(list), winner = copy(slice.item);
   const target = landingRotation(rotation, slice), group = drawWheel(document.querySelector('#audience-wheel'), options, { rotation, spinning: true });
   document.querySelector('[data-action="spin"]').disabled = true;
@@ -188,8 +232,16 @@ async function spin(w) {
   const frames = [{ transform: `rotate(${rotation}deg)` }, { transform: `rotate(${target}deg)` }];
   const timing = { duration, easing: 'cubic-bezier(.18,.05,.12,1)', fill: 'forwards' };
   const animation = group.animate(frames, timing);
-  group.rotationLayers.forEach(layer => layer.animate(frames, timing));
-  await animation.finished;
+  run.animations = [animation, ...group.rotationLayers.map(layer => layer.animate(frames, timing))];
+  run.stopTicks = trackSpinTicks(animation, rotation, target, list);
+  try { await animation.finished; }
+  catch {
+    if (activeSpin === run) { cancelSpin(); renderAudience(w); }
+    return;
+  }
+  if (token !== routeToken || activeSpin !== run) return;
+  run.stopTicks();
+  activeSpin = null;
   spinning = false;
   if (data.wheels.includes(w) && recordWinner(w, winner, spinId)) save();
   if (token !== routeToken) return;
@@ -197,6 +249,7 @@ async function spin(w) {
   if (w.removeWinner) removedWinnerIds.add(winner.id);
   renderAudience(w);
   result(w, winner);
+  playSound('wheel-win');
 }
 document.addEventListener('input', event => {
   const el = event.target, field = el.dataset.field, w = current();
@@ -260,6 +313,7 @@ document.querySelector('#import-file').addEventListener('change', async event =>
   finally { event.target.value = ''; }
 });
 window.addEventListener('hashchange', render);
+window.addEventListener('pagehide', cancelSpin);
 let resizeTimer;
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer); resizeTimer = setTimeout(() => {

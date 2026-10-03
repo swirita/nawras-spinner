@@ -1,0 +1,37 @@
+#notice.visible {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  overflow: hidden;
+}
+
+#notice .notice-message {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+#notice .notice-dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  box-shadow: none;
+}
+
+#notice .notice-dismiss:hover {
+  border-color: #e2c16e;
+  background: #e2c16e26;
+}
+
+#notice .notice-dismiss svg {
+  display: block;
+}
