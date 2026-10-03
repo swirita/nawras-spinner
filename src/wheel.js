@@ -4,19 +4,63 @@ const ns = 'http://www.w3.org/2000/svg';
 const node = (tag, attrs = {}) => { const el = document.createElementNS(ns, tag); for (const [key, val] of Object.entries(attrs)) el.setAttribute(key, val); return el; };
 const point = angle => [250 + 238 * Math.sin(angle * Math.PI / 180), 250 - 238 * Math.cos(angle * Math.PI / 180)];
 let sequence = 0;
+const views = new WeakMap();
 const measure = document.createElement('canvas').getContext('2d');
+function updateEntry(entry, item, labels, mini, spinning, entries) {
+  const label = labelFor(item);
+  const link = !mini && !spinning && linkFor(item);
+  if (link !== entry.link) {
+    const parent = link ? node('a', { href: link, target: '_blank', rel: 'noopener noreferrer', 'aria-label': `Open link for ${label}`, class: 'slice-link' }) : node('g');
+    parent.append(entry.title, entry.shape);
+    entry.parent.replaceWith(parent);
+    entry.parent = parent;
+    entry.link = link;
+  }
+  if (entry.label === label) return;
+  entry.label = label;
+  entry.title.textContent = label;
+  if (link) entry.parent.setAttribute('aria-label', `Open link for ${label}`);
+  if (!entry.labelSize) return;
+  measure.font = `500 ${entry.labelSize}px "Segoe UI", Arial, sans-serif`;
+  const size = Math.min(entry.labelSize, entry.labelSize * 138 / Math.max(1, measure.measureText(label).width));
+  if (size < 11) { entry.text?.remove(); entry.text = null; return; }
+  if (entry.text) {
+    entry.text.setAttribute('font-size', size);
+    entry.text.textContent = label;
+    return;
+  }
+  const angle = (entry.slice.start + entry.slice.end) / 2, flip = angle > 180;
+  const text = node('text', { transform: `translate(250 250) rotate(${angle - 90 + (flip ? 180 : 0)})`, x: flip ? -153 : 153, y: 0, 'text-anchor': 'middle', 'dominant-baseline': 'middle', class: 'slice-label', 'font-size': size });
+  text.style.fill = entry.textColor;
+  text.textContent = label;
+  entry.text = text;
+  // Preserve label order when a previously hidden label becomes short enough.
+  labels.insertBefore(text, entries.slice(entry.index + 1).find(next => next.text)?.text || null);
+}
 export function drawWheel(container, options, { mini = false, rotation = 0, spinning = false } = {}) {
+  const sectionColors = options.map(colorFor);
+  const key = JSON.stringify([mini, options.map((item, index) => [item.id, item.adjustWeight ? item.weight : 1, sectionColors[index]])]);
+  const cached = views.get(container);
+  if (cached?.key === key && cached.group.parentNode?.parentNode === container) {
+    cached.entries.forEach((entry, i) => { entry.slice.item = options[i]; updateEntry(entry, options[i], cached.labels, mini, spinning, cached.entries); });
+    container.classList.toggle('spinning', spinning);
+    if (cached.rotation !== rotation) {
+      [cached.group, ...cached.group.rotationLayers].forEach(layer => layer.style.transform = `rotate(${rotation}deg)`);
+      cached.rotation = rotation;
+    }
+    return cached.group;
+  }
   container.replaceChildren();
   container.className = `wheel-wrap${mini ? ' mini' : ''}${spinning ? ' spinning' : ''}`;
   const svg = node('svg', { viewBox: '0 0 500 500', 'aria-label': options.length ? `Wheel with ${options.length} options` : 'Empty wheel', role: 'group' });
   const prefix = `wheel-${++sequence}`;
   const defs = node('defs');
-  const sectionColors = options.map(colorFor);
   const uniqueColors = [...new Set(sectionColors)];
+  const styles = new Map(uniqueColors.map(color => [color, sectionStyle(color)]));
   const gradientIds = new Map();
   uniqueColors.forEach((color, i) => {
     gradientIds.set(color, `${prefix}-${i}`);
-    const { highlight } = sectionStyle(color);
+    const { highlight } = styles.get(color);
     const gradient = node('linearGradient', { id: `${prefix}-${i}`, x1: '0', y1: '0', x2: '1', y2: '1' });
     gradient.append(node('stop', { offset: '0', 'stop-color': tint(color, highlight) }), node('stop', { offset: '.55', 'stop-color': color }), node('stop', { offset: '1', 'stop-color': tint(color, highlight * .2) })); defs.append(gradient);
   });
@@ -31,31 +75,21 @@ export function drawWheel(container, options, { mini = false, rotation = 0, spin
   const labels = node('g', { class: 'wheel-labels wheel-decoration', style: rotationStyle });
   svg.append(group);
   const list = slices(options);
+  group.sections = list;
+  const entries = [];
   if (!list.length) { group.append(node('circle', { cx: 250, cy: 250, r: 238, fill: '#e8edf4' })); const text = node('text', { x: 250, y: 325, 'text-anchor': 'middle', class: 'empty-wheel' }); text.textContent = 'No options'; group.append(text); }
   list.forEach((slice, index) => {
     const [x1, y1] = point(slice.start), [x2, y2] = point(slice.end);
     const shape = slice.fraction > .999999999 ? node('circle', { cx: 250, cy: 250, r: 238 }) : node('path', { d: `M250 250 L${x1} ${y1} A238 238 0 ${slice.end - slice.start > 180 ? 1 : 0} 1 ${x2} ${y2} Z` });
-    const reflectionShape = shape.cloneNode(); reflectionShape.setAttribute('fill', '#fff'); reflectionShape.setAttribute('opacity', sectionStyle(sectionColors[index]).reflection); maskGroup.append(reflectionShape);
+    const style = styles.get(sectionColors[index]);
+    const reflectionShape = shape.cloneNode(); reflectionShape.setAttribute('fill', '#fff'); reflectionShape.setAttribute('opacity', style.reflection); maskGroup.append(reflectionShape);
     shape.setAttribute('fill', `url(#${gradientIds.get(sectionColors[index])})`); shape.setAttribute('stroke', '#ffffff99'); shape.setAttribute('stroke-width', '.9');
-    const link = !mini && !spinning && linkFor(slice.item);
-    const parent = link ? node('a', { href: link, target: '_blank', rel: 'noopener noreferrer', 'aria-label': `Open link for ${labelFor(slice.item)}`, class: 'slice-link' }) : node('g');
-    const title = node('title'); title.textContent = labelFor(slice.item); parent.append(title, shape);
-    if (!mini && options.length <= 32 && slice.fraction >= .025) {
-      const angle = (slice.start + slice.end) / 2;
-      const flip = angle > 180;
-      const label = labelFor(slice.item);
-      const width = 138;
-      let size = slice.fraction >= .5 ? 16.5 : Math.min(16.5, Math.max(11, 2 * 153 * Math.sin(slice.fraction * Math.PI) * .48));
-      measure.font = `500 ${size}px "Segoe UI", Arial, sans-serif`;
-      size = Math.min(size, size * width / Math.max(1, measure.measureText(label).width));
-      // Show exact names when they fit; hide dense/long labels rather than abbreviating them.
-      if (size >= 11) {
-        const text = node('text', { transform: `translate(250 250) rotate(${angle - 90 + (flip ? 180 : 0)})`, x: flip ? -153 : 153, y: 0, 'text-anchor': 'middle', 'dominant-baseline': 'middle', class: 'slice-label', 'font-size': size });
-        text.style.fill = sectionStyle(sectionColors[index]).text;
-        text.textContent = label; labels.append(text);
-      }
-    }
-    group.append(parent);
+    const parent = node('g'), title = node('title'); parent.append(title, shape); group.append(parent);
+    const entry = { index, slice, shape, parent, title, textColor: style.text, link: false,
+      labelSize: !mini && options.length <= 32 && slice.fraction >= .025
+        ? slice.fraction >= .5 ? 16.5 : Math.min(16.5, Math.max(11, 2 * 153 * Math.sin(slice.fraction * Math.PI) * .48)) : 0 };
+    entries.push(entry);
+    updateEntry(entry, slice.item, labels, mini, spinning, entries);
   });
   const reflection = node('circle', { cx: 250, cy: 250, r: 238, fill: `url(#${prefix}-reflection)`, mask: `url(#${prefix}-mask)`, class: 'wheel-reflection wheel-decoration' });
   // The reflection stays in viewport coordinates; its mask and labels follow the slices.
@@ -64,5 +98,7 @@ export function drawWheel(container, options, { mini = false, rotation = 0, spin
   container.append(svg);
   const img = document.createElement('img'); img.className = 'centre-logo'; img.src = `${import.meta.env.BASE_URL}assets/nawras-circle.png`; img.alt = ''; container.append(img);
   const pointer = document.createElement('div'); pointer.className = 'pointer'; container.append(pointer);
+  // SVG viewBox geometry scales with CSS dimensions without pixel-based rebuilding.
+  views.set(container, { key, group, entries, labels, rotation });
   return group;
 }

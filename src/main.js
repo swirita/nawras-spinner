@@ -1,10 +1,5 @@
 import './style.css';
-import './polish.css';
-import './editor-layout.css';
-import './frosted.css';
-import './winner-footer.css';
-import './notification.css';
-import { VERSION, STORAGE_KEY, id, copy, wheel, option, load, validateData, slices, selectSlice, landingRotation, labelFor, linkFor, recordWinner } from './model.js';
+import { STORAGE_KEY, id, copy, wheel, option, load, validateData, selectSlice, landingRotation, labelFor, linkFor, recordWinner } from './model.js';
 import { drawWheel } from './wheel.js';
 import { colorFor, defaultColor } from './colors.js';
 import { resumeAudio, cancelSounds, playSound } from './audio.js';
@@ -14,26 +9,56 @@ const app = document.querySelector('#app'), header = document.querySelector('#he
 let storage;
 try { storage = window.localStorage; } catch { storage = { getItem() { throw Error('Storage unavailable'); } }; }
 const loaded = load(storage);
-let data = loaded.data, blocked = loaded.blocked, spinning = false, rotation = 0, routeToken = 0, editGroup = null, lastSave = !loaded.blocked;
+const data = loaded.data;
+let blocked = loaded.blocked, spinning = false, rotation = 0, routeToken = 0, editGroup = null, lastSave = !loaded.blocked;
 const histories = new Map();
 const editorScroll = new Map();
 let revealTimer;
 let celebrationTimer;
 let revealTransition = false;
 let activeSpin;
+let revealWait;
+let confirmCallback;
+let resizeTimer;
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+function cancelRevealWait() {
+  if (!revealWait) return;
+  clearTimeout(revealWait.timer);
+  cancelAnimationFrame(revealWait.frame);
+  revealWait.resolve(false);
+  revealWait = null;
+}
+function waitForReveal(milliseconds = 0) {
+  return new Promise(resolve => {
+    const wait = { resolve };
+    revealWait = wait;
+    const finish = () => { revealWait = null; resolve(true); };
+    if (milliseconds) wait.timer = setTimeout(finish, milliseconds);
+    else wait.frame = requestAnimationFrame(() => { wait.frame = requestAnimationFrame(finish); });
+  });
+}
 function cancelSpin() {
   activeSpin?.stopTicks?.();
   cancelSounds();
   activeSpin?.animations.forEach(animation => animation.cancel());
   activeSpin = null;
   spinning = false;
+  document.body.classList.remove('wheel-moving');
+}
+function stopScreenWork() {
+  cancelSpin();
+  cancelRevealWait();
+  clearTimeout(revealTimer);
+  clearTimeout(resizeTimer);
+  clearCelebration();
+  confirmCallback = null;
 }
 // Presentation exclusions are transient and never become part of saved wheel data.
 let removedWinnerIds = new Set();
 const presentationOptions = w => w.options.filter(o => !removedWinnerIds.has(o.id));
 function clearCelebration() {
   clearTimeout(celebrationTimer);
-  dialog.querySelectorAll('.confetti,.winner-sparkles').forEach(el => el.remove());
+  dialog.querySelector('.confetti')?.remove();
 }
 const esc = text => String(text).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 const btn = (action, text, cls = '', extra = '') => `<button type="button" data-action="${action}" class="${cls}" ${extra}>${text}</button>`;
@@ -50,7 +75,7 @@ function message(text) {
 }
 notice.querySelector('.notice-dismiss').addEventListener('click', async () => {
   if (noticeAnimation || !notice.classList.contains('visible')) return;
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) { message(''); return; }
+  if (reducedMotion.matches) { message(''); return; }
   const style = getComputedStyle(notice);
   const animation = notice.animate([
     { height: `${notice.getBoundingClientRect().height}px`, opacity: 1,
@@ -89,25 +114,24 @@ function updateHistory(w) {
   const undo = document.querySelector('[data-action="undo"]'), redo = document.querySelector('[data-action="redo"]');
   if (undo) undo.disabled = !h.undo.length; if (redo) redo.disabled = !h.redo.length;
 }
-function refreshPreview(w) {
-  drawWheel(document.querySelector('#editor-wheel'), w.options);
-  const list = slices(w.options);
+function refreshPreview(w, updateChances = true) {
+  const list = drawWheel(document.querySelector('#editor-wheel'), w.options).sections;
+  if (!updateChances) return;
   document.querySelector('#option-count').textContent = `${w.options.length} options`;
-  document.querySelectorAll('.chance').forEach((el, i) => { const p = (list[i]?.fraction || 0) * 100; el.textContent = `${p > 0 && p < .01 ? '<0.01' : Number(p.toFixed(2))}%`; });
+  document.querySelectorAll('.chance').forEach((el, i) => { const p = (list[i]?.fraction || 0) * 100; const text = `${p > 0 && p < .01 ? '<0.01' : Number(p.toFixed(2))}%`; if (el.textContent !== text) el.textContent = text; });
 }
-function showDialog(html, after) {
+function showDialog(html) {
   clearCelebration();
+  confirmCallback = null;
   clearTimeout(revealTimer); dialog.className = ''; dialog.removeAttribute('aria-labelledby');
   dialog.innerHTML = html; dialog.returnValue = ''; dialog.showModal();
-  dialog.querySelector('[data-action="dismiss"]')?.addEventListener('click', () => dialog.close());
-  after?.();
 }
 function confirmAction(title, text, action, callback) {
   showDialog(`<form method="dialog"><h2>${esc(title)}</h2><p>${esc(text)}</p><div class="dialog-actions"><button value="cancel">Cancel</button><button class="primary" value="confirm">${esc(action)}</button></div></form>`);
-  dialog.addEventListener('close', () => { if (dialog.returnValue === 'confirm') callback(); }, { once: true });
+  confirmCallback = callback;
 }
 function render() {
-  cancelSpin();
+  stopScreenWork();
   routeToken++; rotation = 0; editGroup = null;
   removedWinnerIds = new Set();
   revealTransition = false;
@@ -136,6 +160,14 @@ function renderEditor(w) {
 }
 function renderAudience(w) {
   const options = presentationOptions(w);
+  const stage = app.querySelector('.audience-stage:not(.presentation-exhausted)');
+  if (stage && options.length) {
+    stage.querySelector('h1').textContent = w.title || 'Untitled wheel';
+    drawWheel(document.querySelector('#audience-wheel'), options, { rotation });
+    const button = stage.querySelector('[data-action="spin"]');
+    button.disabled = false; button.textContent = 'Spin';
+    return;
+  }
   const spinButton = btn('spin', 'Spin', 'primary spin-button', !options.length ? 'disabled' : '');
   app.innerHTML = `<section class="audience-stage ${!options.length ? 'presentation-exhausted' : ''}"><h1>${esc(w.title || 'Untitled wheel')}</h1><div id="audience-wheel"></div>${options.length ? spinButton : `<div class="presentation-end"><div class="presentation-actions">${spinButton}${w.options.length ? btn('reset-presentation', 'Reset presentation', 'quiet') : ''}</div><p class="empty-note">No options remain.</p></div>`}</section>`;
   drawWheel(document.querySelector('#audience-wheel'), options, { rotation });
@@ -143,18 +175,17 @@ function renderAudience(w) {
 function result(w, winner) {
   const link = linkFor(winner);
   const options = presentationOptions(w);
-  showDialog(`<div class="winner-content"><h2 id="winner-name" tabindex="-1">${esc(labelFor(winner))}</h2><div class="winner-controls" hidden><button class="close-dialog" data-action="dismiss" aria-label="Close winner"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M6 6 18 18M18 6 6 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button><div class="dialog-actions">${link ? `<a class="button" href="${esc(link)}" target="_blank" rel="noopener noreferrer">Open Link ↗</a>` : ''}${btn('spin-again', 'Spin Again', '', !options.length ? 'disabled' : '')}${!options.length && w.options.length ? btn('reset-presentation', 'Reset presentation') : ''}</div><p class="empty-note" ${options.length ? 'hidden' : ''}>No options remain.</p></div></div>`, () => {
-    dialog.querySelector('[data-action="spin-again"]').addEventListener('click', () => spinAgain(w));
-  });
+  showDialog(`<div class="winner-content"><h2 id="winner-name" tabindex="-1">${esc(labelFor(winner))}</h2><div class="winner-controls" hidden><button class="close-dialog" data-action="dismiss" aria-label="Close winner"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M6 6 18 18M18 6 6 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button><div class="dialog-actions">${link ? `<a class="button" href="${esc(link)}" target="_blank" rel="noopener noreferrer">Open Link ↗</a>` : ''}${btn('spin-again', 'Spin Again', '', !options.length ? 'disabled' : '')}${!options.length && w.options.length ? btn('reset-presentation', 'Reset presentation') : ''}</div><p class="empty-note" ${options.length ? 'hidden' : ''}>No options remain.</p></div></div>`);
   dialog.className = 'winner-reveal'; dialog.setAttribute('aria-labelledby', 'winner-name');
   document.querySelector('#winner-name').focus({ preventScroll: true });
   fitWinner();
   revealTimer = setTimeout(() => { if (dialog.open && dialog.classList.contains('winner-reveal')) { dialog.querySelector('.winner-controls').hidden = false; } }, 1000);
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (reducedMotion.matches) return;
   const confetti = document.createElement('div'); confetti.className = 'confetti'; confetti.setAttribute('aria-hidden', 'true');
+  const spread = Math.min(innerWidth * .85, 950), rise = -Math.min(innerHeight * .75, 760);
   for (let i = 0; i < 32; i++) {
     const piece = document.createElement('i');
-    piece.style.cssText = `--dx:${(Math.random() - .5) * Math.min(innerWidth * .85, 950)}px;--rise:${-Math.min(innerHeight * .75, 760) * (.65 + Math.random() * .35)}px;--delay:${Math.random() * .5}s;--tilt:${Math.random() * 540}deg;background:${['#efc966', '#77dce9', '#c0abf0'][i % 3]}`;
+    piece.style.cssText = `--dx:${(Math.random() - .5) * spread}px;--rise:${rise * (.65 + Math.random() * .35)}px;--delay:${Math.random() * .5}s;--tilt:${Math.random() * 540}deg;background:${['#efc966', '#77dce9', '#c0abf0'][i % 3]}`;
     confetti.append(piece);
   }
   dialog.append(confetti);
@@ -167,17 +198,16 @@ async function spinAgain(w) {
   cancelSounds();
   clearTimeout(revealTimer);
   const token = routeToken;
-  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
   dialog.querySelectorAll('button').forEach(button => button.disabled = true);
   dialog.classList.add('winner-leaving');
-  if (!reduced) await new Promise(resolve => setTimeout(resolve, 350));
+  if (!reducedMotion.matches && !await waitForReveal(350)) return;
   if (token !== routeToken || !dialog.open) { revealTransition = false; return; }
   clearCelebration(); dialog.close();
   // Paint the unobscured wheel once before beginning another spin.
-  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  if (!await waitForReveal()) return;
   revealTransition = false;
   if (token === routeToken && route().view === 'present' && current() === w) {
-    drawWheel(document.querySelector('#audience-wheel'), presentationOptions(w), { rotation }); spin(w);
+    spin(w);
   }
 }
 function showWinnerHistory(w) {
@@ -197,9 +227,16 @@ function fitWinner() {
   text.style.fontSize = `${low}px`;
 }
 dialog.addEventListener('close', () => {
+  if (dialog.open) return; // A newer dialog may have opened before the close event runs.
   clearTimeout(revealTimer);
+  clearTimeout(resizeTimer);
   clearCelebration();
+  cancelSounds();
   if (dialog.classList.contains('winner-reveal')) queueMicrotask(() => { if (!dialog.open) { const button = document.querySelector('[data-action="spin"]'); (button?.disabled ? document.querySelector('[data-action="back-editor"]') : button)?.focus({ preventScroll: true }); } });
+  const callback = confirmCallback;
+  confirmCallback = null;
+  dialog.replaceChildren();
+  if (dialog.returnValue === 'confirm') callback?.();
 });
 dialog.addEventListener('cancel', event => {
   if (revealTransition) event.preventDefault();
@@ -221,14 +258,16 @@ async function spin(w) {
   spinning = true; const token = routeToken, spinId = id();
   const run = { animations: [] };
   activeSpin = run;
+  document.body.classList.add('wheel-moving');
   cancelSounds();
   await resumeAudio();
   if (token !== routeToken || activeSpin !== run) return;
-  const list = slices(options), slice = selectSlice(list), winner = copy(slice.item);
-  const target = landingRotation(rotation, slice), group = drawWheel(document.querySelector('#audience-wheel'), options, { rotation, spinning: true });
+  const group = drawWheel(document.querySelector('#audience-wheel'), options, { rotation, spinning: true });
+  const list = group.sections, slice = selectSlice(list), winner = copy(slice.item);
+  const target = landingRotation(rotation, slice);
   document.querySelector('[data-action="spin"]').disabled = true;
   document.querySelector('[data-action="spin"]').textContent = 'Spinning…';
-  const duration = matchMedia('(prefers-reduced-motion: reduce)').matches ? 80 : 6048;
+  const duration = reducedMotion.matches ? 80 : 6048;
   const frames = [{ transform: `rotate(${rotation}deg)` }, { transform: `rotate(${target}deg)` }];
   const timing = { duration, easing: 'cubic-bezier(.18,.05,.12,1)', fill: 'forwards' };
   const animation = group.animate(frames, timing);
@@ -241,8 +280,10 @@ async function spin(w) {
   }
   if (token !== routeToken || activeSpin !== run) return;
   run.stopTicks();
+  run.animations.forEach(animation => animation.cancel());
   activeSpin = null;
   spinning = false;
+  document.body.classList.remove('wheel-moving');
   if (data.wheels.includes(w) && recordWinner(w, winner, spinId)) save();
   if (token !== routeToken) return;
   rotation = target % 360;
@@ -263,7 +304,7 @@ document.addEventListener('input', event => {
   }
   edit(w, () => { o[field] = value; }, `${o.id}:${field}`);
   if (field === 'url') row.querySelector('.url-error').hidden = !!linkFor(o);
-  refreshPreview(w);
+  if (field !== 'title') refreshPreview(w, field === 'weight');
 });
 document.addEventListener('focusout', event => { editGroup = null; const el = event.target; if (el.dataset.field === 'weight' && !el.checkValidity()) { const o = current()?.options.find(o => o.id === el.closest('[data-option]').dataset.option); if (o) el.value = o.weight; el.setCustomValidity(''); el.setAttribute('aria-invalid', 'false'); } });
 document.addEventListener('change', event => {
@@ -273,13 +314,15 @@ document.addEventListener('change', event => {
   edit(w, () => { o[el.dataset.field] = el.checked; if (el.dataset.field === 'adjustWeight' && !el.checked) o.weight = 1; });
   renderEditor(w);
 });
-document.addEventListener('click', async event => {
+document.addEventListener('click', event => {
   const button = event.target.closest('[data-action]'); if (!button || button.disabled) return;
   const action = button.dataset.action, w = current();
+  if (action === 'dismiss') dialog.close();
+  if (action === 'spin-again' && w) spinAgain(w);
   const cardWheel = data.wheels.find(w => w.id === button.closest('[data-wheel]')?.dataset.wheel);
   if (action === 'create') { const created = wheel('Untitled wheel'); data.wheels.push(created); save(); location.hash = `#/edit/${created.id}`; }
   if (action === 'duplicate') { const duplicate = copy(cardWheel); duplicate.id = id(); duplicate.options.forEach(o => o.id = id()); duplicate.winnerHistory = []; duplicate.title += ' (copy)'; data.wheels.push(duplicate); save(); renderLibrary(); }
-  if (action === 'delete') confirmAction('Delete wheel?', cardWheel.title || 'Untitled wheel', 'Delete', () => { data.wheels = data.wheels.filter(w => w.id !== cardWheel.id); histories.delete(cardWheel.id); save(); renderLibrary(); });
+  if (action === 'delete') confirmAction('Delete wheel?', cardWheel.title || 'Untitled wheel', 'Delete', () => { data.wheels = data.wheels.filter(w => w.id !== cardWheel.id); histories.delete(cardWheel.id); editorScroll.delete(cardWheel.id); save(); renderLibrary(); });
   if (action === 'export') download(JSON.stringify(data, null, 2), 'nawras-wheels.json');
   if (action === 'import') document.querySelector('#import-file').click();
   if (action === 'back-editor' && !spinning) location.hash = `#/edit/${w.id}`;
@@ -302,21 +345,34 @@ document.addEventListener('click', async event => {
   if (action === 'add-option') { edit(w, w => w.options.push(option('', w.options.length))); renderEditor(w); const inputs = app.querySelectorAll('[data-field="label"]'); inputs[inputs.length - 1].focus({ preventScroll: true }); inputs[inputs.length - 1].scrollIntoView({ block: 'nearest' }); }
   if (action === 'remove-option') { edit(w, w => { w.options = w.options.filter(o => o.id !== button.closest('[data-option]').dataset.option); }); renderEditor(w); }
   if (action === 'clear') confirmAction('Clear all options?', 'You can undo this change.', 'Clear Options', () => { edit(w, w => { w.options = []; }); renderEditor(w); });
-  if (action === 'paste') showDialog(`<form id="paste-form"><h2>Paste options</h2><textarea id="paste-options" aria-label="Options, one per line" placeholder="One option per line" rows="9"></textarea><div class="dialog-actions">${btn('dismiss', 'Cancel')}<button class="primary" type="submit">Add Options</button></div></form>`, () => {
-    document.querySelector('#paste-form').addEventListener('submit', event => { event.preventDefault(); const labels = document.querySelector('#paste-options').value.split(/\r?\n/).map(x => x.trim()).filter(Boolean); if (!labels.length) return; edit(w, w => { w.options = w.options.concat(labels.map((label, index) => option(label, w.options.length + index))); }); dialog.close(); renderEditor(w); });
-  });
+  if (action === 'paste') showDialog(`<form id="paste-form"><h2>Paste options</h2><textarea id="paste-options" aria-label="Options, one per line" placeholder="One option per line" rows="9"></textarea><div class="dialog-actions">${btn('dismiss', 'Cancel')}<button class="primary" type="submit">Add Options</button></div></form>`);
+});
+
+dialog.addEventListener('submit', event => {
+  if (event.target.id !== 'paste-form') return;
+  event.preventDefault();
+  const w = current(), labels = document.querySelector('#paste-options').value.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+  if (!w || !labels.length) return;
+  edit(w, w => { w.options = w.options.concat(labels.map((label, index) => option(label, w.options.length + index))); });
+  dialog.close(); renderEditor(w);
 });
 document.querySelector('#import-file').addEventListener('change', async event => {
   const file = event.target.files[0]; if (!file) return;
-  try { const imported = validateData(JSON.parse(await file.text()), true); data.wheels = data.wheels.concat(imported.wheels); const saved = save(); location.hash = '#/wheels'; renderLibrary(); if (saved) message(`Imported ${imported.wheels.length} wheel${imported.wheels.length === 1 ? '' : 's'}.`); }
+  try { const imported = validateData(JSON.parse(await file.text()), true); data.wheels = data.wheels.concat(imported.wheels); const saved = save(); if (location.hash === '#/wheels' || !location.hash) render(); else location.hash = '#/wheels'; if (saved) message(`Imported ${imported.wheels.length} wheel${imported.wheels.length === 1 ? '' : 's'}.`); }
   catch (error) { message(`Import failed: ${error.message}`); }
   finally { event.target.value = ''; }
 });
 window.addEventListener('hashchange', render);
-window.addEventListener('pagehide', cancelSpin);
-let resizeTimer;
+window.addEventListener('pagehide', () => { stopScreenWork(); noticeAnimation?.cancel(); });
+document.addEventListener('visibilitychange', () => {
+  document.body.classList.toggle('page-hidden', document.hidden);
+  if (document.hidden) { cancelSounds(); clearCelebration(); }
+});
+reducedMotion.addEventListener('change', () => { if (reducedMotion.matches) clearCelebration(); });
 window.addEventListener('resize', () => {
-  clearTimeout(resizeTimer); resizeTimer = setTimeout(() => {
+  clearTimeout(resizeTimer);
+  if (!dialog.open || !dialog.classList.contains('winner-reveal')) return;
+  resizeTimer = setTimeout(() => {
     if (dialog.classList.contains('winner-reveal') && dialog.open) fitWinner();
   }, 100);
 });
