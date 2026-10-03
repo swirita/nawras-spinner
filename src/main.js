@@ -169,7 +169,7 @@ function renderAudience(w) {
     return;
   }
   const spinButton = btn('spin', 'Spin', 'primary spin-button', !options.length ? 'disabled' : '');
-  app.innerHTML = `<section class="audience-stage ${!options.length ? 'presentation-exhausted' : ''}"><h1>${esc(w.title || 'Untitled wheel')}</h1><div id="audience-wheel"></div>${options.length ? spinButton : `<div class="presentation-end"><div class="presentation-actions">${spinButton}${w.options.length ? btn('reset-presentation', 'Reset presentation', 'quiet') : ''}</div><p class="empty-note">No options remain.</p></div>`}</section>`;
+  app.innerHTML = `<section class="audience-stage ${!options.length ? 'presentation-exhausted' : ''}"><h1>${esc(w.title || 'Untitled wheel')}</h1><div class="audience-wheel-space"><div id="audience-wheel"></div></div>${options.length ? spinButton : `<div class="presentation-end"><div class="presentation-actions">${spinButton}${w.options.length ? btn('reset-presentation', 'Reset presentation', 'quiet') : ''}</div><p class="empty-note">No options remain.</p></div>`}</section>`;
   drawWheel(document.querySelector('#audience-wheel'), options, { rotation });
 }
 function result(w, winner) {
