@@ -1,5 +1,6 @@
 import './style.css';
 import './polish.css';
+import './editor-layout.css';
 import { VERSION, STORAGE_KEY, id, copy, wheel, option, load, validateData, slices, selectSlice, landingRotation, labelFor, linkFor } from './model.js';
 import { drawWheel } from './wheel.js';
 
@@ -9,9 +10,8 @@ try { storage = window.localStorage; } catch { storage = { getItem() { throw Err
 const loaded = load(storage);
 let data = loaded.data, blocked = loaded.blocked, spinning = false, rotation = 0, routeToken = 0, editGroup = null, lastSave = !loaded.blocked;
 const histories = new Map();
-const editorPages = new Map();
+const editorScroll = new Map();
 let revealTimer;
-const pageSize = () => matchMedia('(min-width: 850px) and (min-height: 640px)').matches ? Math.max(1, Math.min(6, Math.floor((innerHeight - 450) / 130))) : 4;
 const esc = text => String(text).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 const btn = (action, text, cls = '', extra = '') => `<button type="button" data-action="${action}" class="${cls}" ${extra}>${text}</button>`;
 const route = () => { const [, view, id] = location.hash.split('/'); return { view: view || 'wheels', id }; };
@@ -45,8 +45,7 @@ function refreshPreview(w) {
   drawWheel(document.querySelector('#editor-wheel'), w.options);
   const list = slices(w.options);
   document.querySelector('#option-count').textContent = `${w.options.length} options`;
-  const offset = (editorPages.get(w.id) || 0) * pageSize();
-  document.querySelectorAll('.chance').forEach((el, i) => { const p = (list[offset + i]?.fraction || 0) * 100; el.textContent = `${p > 0 && p < .01 ? '<0.01' : Number(p.toFixed(2))}%`; });
+  document.querySelectorAll('.chance').forEach((el, i) => { const p = (list[i]?.fraction || 0) * 100; el.textContent = `${p > 0 && p < .01 ? '<0.01' : Number(p.toFixed(2))}%`; });
 }
 function showDialog(html, after) {
   clearTimeout(revealTimer); dialog.className = ''; dialog.removeAttribute('aria-labelledby');
@@ -64,7 +63,7 @@ function render() {
   const { view } = route(), w = current();
   document.body.classList.toggle('audience', view === 'present' && !!w);
   document.body.classList.toggle('editing', view === 'edit' && !!w);
-  header.innerHTML = view === 'present' && w ? `${btn('back-editor', '← Back', 'quiet audience-back')}<img class="audience-brand" src="${import.meta.env.BASE_URL}assets/nawras-name.png" alt="NawrasEdu">` : `<a class="brand" href="#/wheels" aria-label="My Wheels"><img src="${import.meta.env.BASE_URL}assets/nawras-name.png" alt="NawrasEdu"><span>Spinner<span class="brand-dot">.</span></span></a><a class="library-link" href="#/wheels">My Wheels</a>`;
+  header.innerHTML = view === 'present' && w ? `${btn('back-editor', '← Back', 'quiet audience-back')}<img class="audience-brand" src="${import.meta.env.BASE_URL}assets/nawras-name.png" alt="NawrasEdu">` : `<a class="brand" href="#/wheels" aria-label="My Wheels"><img src="${import.meta.env.BASE_URL}assets/nawras-name.png" alt="NawrasEdu"></a><a class="library-link" href="#/wheels">My Wheels</a>`;
   if (view === 'wheels' || !w) renderLibrary();
   else if (view === 'edit') renderEditor(w);
   else if (view === 'present') renderAudience(w);
@@ -76,11 +75,10 @@ function renderLibrary() {
   for (const w of data.wheels) drawWheel(document.querySelector(`[data-preview="${w.id}"]`), w.options, { mini: true });
 }
 function renderEditor(w) {
-  const size = pageSize(), pages = Math.max(1, Math.ceil(w.options.length / size));
-  const page = Math.min(editorPages.get(w.id) || 0, pages - 1);
-  editorPages.set(w.id, page);
-  const offset = page * size;
-  app.innerHTML = `<div class="editor-top"><a class="back-link" href="#/wheels">← My Wheels</a><div class="toolbar"><span id="saved" class="saved">${blocked ? 'Not saved' : '✓ Saved'}</span><a class="button primary" href="#/present/${w.id}">Present ↗</a></div></div><div class="editor-layout"><section class="wheel-stage" aria-label="Wheel preview"><div id="editor-wheel"></div></section><section class="editor-pane"><label class="field-label" for="wheel-title">Wheel title</label><input id="wheel-title" class="title-input" data-field="title" value="${esc(w.title)}" placeholder="Untitled wheel"><div class="options-heading"><h2>Options <span id="option-count"></span></h2><div class="history-actions">${btn('undo', '↶', '', 'aria-label="Undo" title="Undo"')}${btn('redo', '↷', '', 'aria-label="Redo" title="Redo"')}</div></div><div class="option-list">${w.options.slice(offset, offset + size).map((o, i) => `<div class="option-row" data-option="${o.id}"><div class="option-main"><span class="option-number">${String(i + offset + 1).padStart(2, '0')}</span><input data-field="label" aria-label="Option ${i + offset + 1} label" value="${esc(o.label)}" placeholder="Option label"><span class="chance"></span>${btn('remove-option', '×', 'remove', `aria-label="Remove option ${i + offset + 1}"`)}</div><div class="option-settings"><label><input type="checkbox" data-field="adjustWeight" ${o.adjustWeight ? 'checked' : ''}> Adjust weight</label>${o.adjustWeight ? `<input class="weight-input" data-field="weight" type="number" min="0" step="any" aria-label="Option ${i + offset + 1} weight" value="${o.weight}">` : ''}<label><input type="checkbox" data-field="linkEnabled" ${o.linkEnabled ? 'checked' : ''}> Link</label></div>${o.linkEnabled ? `<input class="url-input" type="url" data-field="url" aria-label="Option ${i + offset + 1} URL" placeholder="https://example.com" value="${esc(o.url)}"><small class="url-error" ${linkFor(o) ? 'hidden' : ''}>Enter a valid HTTP or HTTPS URL.</small>` : ''}</div>`).join('')}</div><nav class="pagination" aria-label="Options pages">${btn('previous-page', '←', '', `aria-label="Previous page" ${!page ? 'disabled' : ''}`)}<span aria-live="polite">Page ${page + 1} of ${pages}</span>${btn('next-page', '→', '', `aria-label="Next page" ${page === pages - 1 ? 'disabled' : ''}`)}</nav><div class="option-tools">${btn('add-option', '+ Add option')}${btn('paste', 'Paste list')}${btn('clear', 'Clear', 'text-button', `aria-label="Clear Options" ${!w.options.length ? 'disabled' : ''}`)}</div><label class="remove-winner"><input type="checkbox" data-field="removeWinner" ${w.removeWinner ? 'checked' : ''}> Remove winner after each spin</label></section></div>`;
+  const oldList = document.querySelector('.option-list');
+  if (oldList && oldList.dataset.wheel === w.id) editorScroll.set(w.id, oldList.scrollTop);
+  app.innerHTML = `<div class="editor-top"><a class="back-link" href="#/wheels">← My Wheels</a><div class="toolbar"><span id="saved" class="saved">${blocked ? 'Not saved' : '✓ Saved'}</span><a class="button primary" href="#/present/${w.id}">Present ↗</a></div></div><div class="editor-layout"><section class="wheel-stage" aria-label="Wheel preview"><div id="editor-wheel"></div></section><section class="editor-pane"><label class="field-label" for="wheel-title">Wheel title</label><input id="wheel-title" class="title-input" data-field="title" value="${esc(w.title)}" placeholder="Untitled wheel"><div class="options-heading"><h2>Options <span id="option-count"></span></h2><div class="history-actions">${btn('undo', '↶', '', 'aria-label="Undo" title="Undo"')}${btn('redo', '↷', '', 'aria-label="Redo" title="Redo"')}</div></div><div class="option-list" data-wheel="${w.id}" tabindex="0" role="region" aria-label="Wheel entries">${w.options.map((o, i) => `<div class="option-row" data-option="${o.id}"><div class="option-main"><span class="option-number">${String(i + 1).padStart(2, '0')}</span><input data-field="label" aria-label="Option ${i + 1} label" value="${esc(o.label)}" placeholder="Option label"><span class="chance"></span>${btn('remove-option', '×', 'remove', `aria-label="Remove option ${i + 1}"`)}</div><div class="option-settings"><label><input type="checkbox" data-field="adjustWeight" ${o.adjustWeight ? 'checked' : ''}> Adjust weight</label>${o.adjustWeight ? `<input class="weight-input" data-field="weight" type="number" min="0" step="any" aria-label="Option ${i + 1} weight" value="${o.weight}">` : ''}<label><input type="checkbox" data-field="linkEnabled" ${o.linkEnabled ? 'checked' : ''}> Link</label></div>${o.linkEnabled ? `<input class="url-input" type="url" data-field="url" aria-label="Option ${i + 1} URL" placeholder="https://example.com" value="${esc(o.url)}"><small class="url-error" ${linkFor(o) ? 'hidden' : ''}>Enter a valid HTTP or HTTPS URL.</small>` : ''}</div>`).join('')}</div><div class="option-tools">${btn('add-option', '+ Add option')}${btn('paste', 'Paste list')}${btn('clear', 'Clear', 'text-button', `aria-label="Clear Options" ${!w.options.length ? 'disabled' : ''}`)}</div><label class="remove-winner"><input type="checkbox" data-field="removeWinner" ${w.removeWinner ? 'checked' : ''}> Remove winner after each spin</label></section></div>`;
+  document.querySelector('.option-list').scrollTop = editorScroll.get(w.id) || 0;
   refreshPreview(w); updateHistory(w);
   updateSaved(lastSave);
 }
@@ -183,12 +181,11 @@ document.addEventListener('click', async event => {
   if (action === 'back-editor' && !spinning) location.hash = `#/edit/${w.id}`;
   if (action === 'spin') { drawWheel(document.querySelector('#audience-wheel'), w.options, { rotation }); spin(w); }
   if (!w) return;
-  if (action === 'previous-page' || action === 'next-page') { editorPages.set(w.id, (editorPages.get(w.id) || 0) + (action === 'next-page' ? 1 : -1)); editGroup = null; renderEditor(w); document.querySelector(`[data-action="${action}"]`)?.focus(); }
   if (action === 'undo' || action === 'redo') {
     const h = history(w), from = h[action], to = h[action === 'undo' ? 'redo' : 'undo'];
     if (!from.length) return; to.push(copy(w)); Object.assign(w, from.pop()); editGroup = null; save(); renderEditor(w);
   }
-  if (action === 'add-option') { edit(w, w => w.options.push(option(''))); editorPages.set(w.id, Math.floor((w.options.length - 1) / pageSize())); renderEditor(w); const inputs = app.querySelectorAll('[data-field="label"]'); inputs[inputs.length - 1].focus(); }
+  if (action === 'add-option') { edit(w, w => w.options.push(option(''))); renderEditor(w); const inputs = app.querySelectorAll('[data-field="label"]'); inputs[inputs.length - 1].focus({ preventScroll: true }); inputs[inputs.length - 1].scrollIntoView({ block: 'nearest' }); }
   if (action === 'remove-option') { edit(w, w => { w.options = w.options.filter(o => o.id !== button.closest('[data-option]').dataset.option); }); renderEditor(w); }
   if (action === 'clear') confirmAction('Clear all options?', 'You can undo this change.', 'Clear Options', () => { edit(w, w => { w.options = []; }); renderEditor(w); });
   if (action === 'paste') showDialog(`<form id="paste-form"><h2>Paste options</h2><textarea id="paste-options" aria-label="Options, one per line" placeholder="One option per line" rows="9"></textarea><div class="dialog-actions">${btn('dismiss', 'Cancel')}<button class="primary" type="submit">Add Options</button></div></form>`, () => {
@@ -206,13 +203,6 @@ let resizeTimer;
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer); resizeTimer = setTimeout(() => {
     if (dialog.classList.contains('winner-reveal') && dialog.open) fitWinner();
-    if (route().view !== 'edit' || !current() || dialog.open) return;
-    const active = document.activeElement, field = active?.dataset.field, optionId = active?.closest('[data-option]')?.dataset.option;
-    const start = active?.selectionStart, end = active?.selectionEnd;
-    if (optionId) editorPages.set(current().id, Math.floor(current().options.findIndex(o => o.id === optionId) / pageSize()));
-    renderEditor(current());
-    const restored = optionId ? app.querySelector(`[data-option="${optionId}"] [data-field="${field}"]`) : app.querySelector(`[data-field="${field}"]`);
-    restored?.focus({ preventScroll: true }); if (start !== null && start !== undefined && restored?.type !== 'number') restored?.setSelectionRange(start, end);
   }, 100);
 });
 window.addEventListener('storage', event => { if (event.key === STORAGE_KEY) { blocked = true; message('Wheels changed in another tab. Saving is paused here. Export changes from this tab before refreshing.'); } });

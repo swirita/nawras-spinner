@@ -56,7 +56,6 @@ try {
   await click('+ Add option');
   assert.equal(await page.getByRole('button', { name: 'Redo', exact: true }).isEnabled(), false);
   await click('Undo');
-  while (await page.getByRole('button', { name: 'Previous page' }).isEnabled()) await click('Previous page');
   await page.getByLabel('Adjust weight', { exact: true }).nth(0).check();
   await page.getByLabel('Option 1 weight', { exact: true }).fill('2.5');
   await page.getByLabel('Option 1 weight', { exact: true }).blur();

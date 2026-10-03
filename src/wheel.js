@@ -47,7 +47,7 @@ export function drawWheel(container, options, { mini = false, rotation = 0, spin
   });
   svg.append(node('circle', { cx: 250, cy: 250, r: 238, fill: `url(#${prefix}-sheen)`, class: 'wheel-decoration' }), node('circle', { cx: 250, cy: 250, r: 241, fill: 'none', stroke: '#d4dfe8', 'stroke-width': 5, class: 'wheel-decoration' }), node('circle', { cx: 250, cy: 250, r: 239, fill: 'none', stroke: '#ffffff', 'stroke-width': 3, class: 'wheel-decoration' }));
   container.append(svg);
-  const img = document.createElement('img'); img.className = 'centre-logo'; img.src = `${import.meta.env.BASE_URL}assets/nawras-small.png`; img.alt = ''; container.append(img);
+  const img = document.createElement('img'); img.className = 'centre-logo'; img.src = `${import.meta.env.BASE_URL}assets/nawras-circle.png`; img.alt = ''; container.append(img);
   const pointer = document.createElement('div'); pointer.className = 'pointer'; container.append(pointer);
   return group;
 }

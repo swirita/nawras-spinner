@@ -12,7 +12,7 @@ const w = example(); w.options[0].adjustWeight = true; w.options[0].weight = 2.5
 w.options = w.options.concat(Array.from({ length: 31 }, (_, i) => option(`Player ${i + 9}`)));
 const click = name => page.getByRole('button', { name, exact: true }).click();
 const checkFits = async () => {
-  const geometry = await page.evaluate(() => ({ height: innerHeight, scroll: document.documentElement.scrollHeight, width: innerWidth, scrollWidth: document.documentElement.scrollWidth, controls: [...document.querySelectorAll('.editor-pane button,.remove-winner,.editor-top,.title-input')].map(el => { const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; }) }));
+  const geometry = await page.evaluate(() => ({ height: innerHeight, scroll: document.documentElement.scrollHeight, width: innerWidth, scrollWidth: document.documentElement.scrollWidth, controls: [...document.querySelectorAll('.option-tools button,.history-actions button,.remove-winner,.editor-top,.title-input')].map(el => { const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; }) }));
   assert.ok(geometry.scroll <= geometry.height + 1, JSON.stringify(geometry)); assert.ok(geometry.scrollWidth <= geometry.width);
   assert.ok(geometry.controls.every(r => r.top >= 0 && r.bottom <= geometry.height));
 };
@@ -21,16 +21,28 @@ try {
   await page.goto(`${target}#/edit/${w.id}`); await page.reload();
   await checkFits();
   await page.screenshot({ path: '.checks/polished-editor.png', fullPage: true });
-  await click('Next page');
-  const firstVisible = await page.locator('[data-field="label"]').first().getAttribute('aria-label');
-  await page.locator('[data-field="label"]').first().fill('Exact edited name');
-  await click('Undo'); assert.notEqual(await page.locator('[data-field="label"]').first().inputValue(), 'Exact edited name');
-  await click('Redo'); assert.equal(await page.locator('[data-field="label"]').first().inputValue(), 'Exact edited name');
+  assert.equal(await page.locator('.option-row').count(), 39);
+  assert.equal(await page.locator('.pagination').count(), 0);
+  await page.locator('[data-field="label"]').last().fill('Exact edited name');
+  await click('Undo'); assert.notEqual(await page.locator('[data-field="label"]').last().inputValue(), 'Exact edited name');
+  await click('Redo'); assert.equal(await page.locator('[data-field="label"]').last().inputValue(), 'Exact edited name');
   await click('+ Add option'); assert.equal(await page.locator('[data-field="label"]').last().evaluate(el => document.activeElement === el), true);
-  await page.reload(); assert.equal(await page.getByRole('button', { name: 'Next page' }).isEnabled(), true);
-  for (const viewport of [{ width: 1366, height: 768 }, { width: 1024, height: 640 }]) { await page.setViewportSize(viewport); await page.waitForTimeout(200); await checkFits(); }
+  await page.reload(); assert.equal(await page.locator('.option-row').count(), 40);
+  for (const viewport of [{ width: 1366, height: 768 }, { width: 1024, height: 640 }, { width: 390, height: 844 }, { width: 320, height: 568 }, { width: 390, height: 450 }]) { await page.setViewportSize(viewport); await page.waitForTimeout(200); await checkFits();
+    const logo = await page.locator('#header img').boundingBox();
+    assert.ok(Math.abs(logo.x + logo.width / 2 - viewport.width / 2) < 1);
+    assert.ok(await page.locator('.centre-logo').getAttribute('src').then(src => src.endsWith('nawras-circle.png')));
+    const region = page.locator('.option-list');
+    assert.equal(await region.evaluate(el => getComputedStyle(el).overflowY), 'auto');
+    assert.equal(await region.evaluate(el => getComputedStyle(el).overscrollBehaviorY), 'contain');
+    await region.evaluate(el => el.scrollTop = el.scrollHeight);
+    await page.locator('[data-field="label"]').last().scrollIntoViewIfNeeded();
+    const last = await page.locator('[data-field="label"]').last().boundingBox(), box = await region.boundingBox();
+    assert.ok(last.y >= box.y - 1 && last.y + last.height <= box.y + box.height + 1, JSON.stringify({ viewport, last, box }));
+    await region.evaluate(el => el.scrollTop = 0);
+  }
   // Expand every visible row to test the worst-case pane height.
-  for (let i = 0; i < await page.getByLabel('Link', { exact: true }).count(); i++) await page.getByLabel('Link', { exact: true }).nth(i).check();
+  for (let i = 0; i < 2; i++) await page.getByLabel('Link', { exact: true }).nth(i).check();
   await checkFits();
   await page.setViewportSize({ width: 640, height: 450 }); await page.waitForTimeout(200);
   assert.equal(await page.getByLabel('Remove winner after each spin').isVisible(), true);
@@ -81,5 +93,5 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Spin Again', exact: true }).isEnabled(), false);
   assert.equal(await page.getByRole('link', { name: /Open Link/ }).getAttribute('href'), 'https://example.com/winner');
   await page.keyboard.press('Escape'); assert.equal(await page.getByRole('button', { name: /Back$/ }).evaluate(el => el === document.activeElement), true);
-  assert.deepEqual(errors, []); console.log('Polish checks passed: desktop fit, pagination/history/focus, mobile/zoom, F fullscreen, slice links, weighted pointer, full-screen reveal, delayed controls, Escape focus, long text, reduced motion and winner removal.');
+  assert.deepEqual(errors, []); console.log('Polish checks passed: desktop/mobile fit, continuous scrolling/history/focus, centered header, circular logo, mobile/zoom, F fullscreen, slice links, weighted pointer, full-screen reveal, delayed controls, Escape focus, long text, reduced motion and winner removal.');
 } finally { await browser.close(); }
