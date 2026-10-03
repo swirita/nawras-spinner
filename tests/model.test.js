@@ -1,6 +1,29 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { wheel, option, example, slices, selectSlice, landingRotation, validURL, validateData, load, STORAGE_KEY } from '../src/model.js';
+import { defaultColor, sectionStyle, contrast, tint } from '../src/colors.js';
+
+test('colors migrate from older data, survive transfer and stay attached to IDs', () => {
+  const original = example(); original.options.forEach(o => delete o.color);
+  const data = validateData({ version: 1, wheels: [original] });
+  assert.deepEqual(data.wheels[0].options.map(o => o.color), original.options.map((_, i) => defaultColor(i)));
+  const selected = data.wheels[0].options[2]; selected.color = '#123abc'; selected.label = 'Renamed'; selected.adjustWeight = true; selected.weight = 2.5;
+  data.wheels[0].options.reverse();
+  const restored = validateData(JSON.parse(JSON.stringify(data)));
+  assert.equal(restored.wheels[0].options.find(o => o.id === selected.id).color, '#123abc');
+  const transferred = validateData(restored, true);
+  assert.equal(transferred.wheels[0].options.find(o => o.label === 'Renamed').color, '#123abc');
+  assert.equal(load({ getItem: () => JSON.stringify(data) }).data.wheels[0].options.find(o => o.id === selected.id).color, '#123abc');
+  selected.color = 'red'; assert.throws(() => validateData(data), /colors/);
+});
+test('labels retain readable contrast across each gradient', () => {
+  for (let red = 0; red <= 255; red += 17) for (let green = 0; green <= 255; green += 17) for (let blue = 0; blue <= 255; blue += 17) {
+    const color = '#' + [red, green, blue].map(c => c.toString(16).padStart(2, '0')).join('');
+    const style = sectionStyle(color);
+    assert.ok(contrast(color, style.text) >= 4.5, `${color}: base`);
+    assert.ok(contrast(tint(color, style.highlight), style.text) >= 4.5, `${color}: highlight`);
+  }
+});
 
 test('weighted random selection and pointer landing agree for decimal and extreme weights', () => {
   for (const weights of [[1, 1, 1], [.1, .3, .6], [1e308, 1e308, 1e307], [1]]) {

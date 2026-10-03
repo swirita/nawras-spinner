@@ -2,7 +2,7 @@ export const VERSION = 1;
 export const STORAGE_KEY = 'nawras-spinner:v1';
 export const id = () => crypto.randomUUID();
 export const copy = value => structuredClone(value);
-export const option = label => ({ id: id(), label, adjustWeight: false, weight: 1, linkEnabled: false, url: '' });
+export const option = (label, index = 0) => ({ id: id(), label, adjustWeight: false, weight: 1, linkEnabled: false, url: '', color: defaultColor(index) });
 export const wheel = (title = 'Untitled wheel', labels = []) => ({ id: id(), title, options: labels.map(option), removeWinner: false });
 export const example = () => wheel('Nawras Activities', ['Wordle', 'Memory', 'Slasher', 'Kahoot 1', 'Kahoot 2', 'Coupon 1', 'Coupon 2', 'Try Again']);
 export const validURL = value => {
@@ -42,11 +42,12 @@ export function validateData(data, fresh = false) {
   const wheels = data.wheels.map(w => {
     if (!w || typeof w.id !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(w.id) || wheelIds.has(w.id) || typeof w.title !== 'string' || !Array.isArray(w.options) || typeof w.removeWinner !== 'boolean') throw new Error('Invalid wheel data.');
     wheelIds.add(w.id);
-    const options = w.options.map(o => {
+    const options = w.options.map((o, index) => {
       if (!o || typeof o.id !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(o.id) || optionIds.has(o.id) || typeof o.label !== 'string' || typeof o.adjustWeight !== 'boolean' || typeof o.weight !== 'number' || !Number.isFinite(o.weight) || o.weight <= 0 || typeof o.linkEnabled !== 'boolean' || typeof o.url !== 'string') throw new Error('Invalid option data. Weights must be positive numbers.');
       optionIds.add(o.id);
       if (o.linkEnabled && !validURL(o.url)) throw new Error('Enabled links must be valid HTTP or HTTPS URLs.');
-      return { id: fresh ? id() : o.id, label: o.label, adjustWeight: o.adjustWeight, weight: o.adjustWeight ? o.weight : 1, linkEnabled: o.linkEnabled, url: o.url };
+      if (o.color !== undefined && !validColor(o.color)) throw new Error('Option colors must be six-digit hexadecimal colors.');
+      return { id: fresh ? id() : o.id, label: o.label, adjustWeight: o.adjustWeight, weight: o.adjustWeight ? o.weight : 1, linkEnabled: o.linkEnabled, url: o.url, color: o.color?.toLowerCase() ?? defaultColor(index) };
     });
     return { id: fresh ? id() : w.id, title: w.title, removeWinner: w.removeWinner, options };
   });
@@ -67,3 +68,4 @@ export function load(storage) {
     return { data: { version: VERSION, wheels: [] }, blocked: true, error, initial: false };
   }
 }
+import { defaultColor, validColor } from './colors.js';
